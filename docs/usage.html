@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>claude-team-skills — usage</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #181b22;
+    --panel-2: #1f232c;
+    --text: #e6e8eb;
+    --muted: #9aa3af;
+    --accent: #7cc4ff;
+    --accent-2: #ffb86b;
+    --ok: #6ee7a0;
+    --warn: #ffb86b;
+    --bad: #ff6b6b;
+    --border: #2a2f3a;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+  }
+  h1 {
+    font-size: 32px;
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+  }
+  h2 {
+    font-size: 22px;
+    margin: 40px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-size: 17px;
+    margin: 24px 0 8px;
+    color: var(--accent);
+  }
+  p { color: var(--text); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .tagline {
+    color: var(--muted);
+    font-size: 16px;
+    margin-bottom: 32px;
+  }
+
+  code, pre, kbd {
+    font-family: var(--mono);
+    font-size: 13.5px;
+  }
+  code {
+    background: var(--panel-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin: 16px 0;
+  }
+  .card h3 { margin-top: 0; }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .badge.ok { background: rgba(110,231,160,0.12); color: var(--ok); border: 1px solid rgba(110,231,160,0.35); }
+  .badge.planned { background: rgba(255,184,107,0.10); color: var(--warn); border: 1px solid rgba(255,184,107,0.30); }
+  .badge.pending { background: rgba(255,107,107,0.10); color: var(--bad); border: 1px solid rgba(255,107,107,0.30); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  .callout {
+    background: rgba(124,196,255,0.06);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    margin: 16px 0;
+  }
+  .callout.warn {
+    background: rgba(255,184,107,0.06);
+    border-left-color: var(--warn);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .toc {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 20px 0 32px;
+  }
+  .toc strong { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .toc ul { margin: 8px 0 0; padding-left: 20px; }
+  .toc li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>claude-team-skills</h1>
+<p class="tagline">Shared Claude Code skills that spawn multiple independent reviewer agents in parallel and consolidate their findings.</p>
+
+<div class="toc">
+  <strong>On this page</strong>
+  <ul>
+    <li><a href="#install">Install</a></li>
+    <li><a href="#skills">Available skills</a></li>
+    <li><a href="#planned">Planned skills</a></li>
+    <li><a href="#using">How to use a skill</a></li>
+    <li><a href="#update">Update &amp; uninstall</a></li>
+    <li><a href="#team">Share with your team</a></li>
+    <li><a href="#new">Add a new skill</a></li>
+    <li><a href="#how">How the parallel review actually works</a></li>
+  </ul>
+</div>
+
+<h2 id="install">Install</h2>
+<p>One-time setup per machine. Symlinks the skills into <code>~/.claude/skills/</code> so every Claude Code session sees them.</p>
+<pre><code>git clone https://github.com/mhagberg/claude-team-skills.git ~/claude-team-skills
+cd ~/claude-team-skills
+./install.sh</code></pre>
+
+<div class="callout">
+The installer is safe: if a skill of the same name already exists in <code>~/.claude/skills/</code>, it is moved aside to <code>&lt;name&gt;.bak.&lt;timestamp&gt;/</code> before the new symlink is created. Nothing is silently overwritten.
+</div>
+
+<h2 id="skills">Available skills</h2>
+
+<div class="card">
+  <h3>/parallel-code-review <span class="badge ok">ready</span></h3>
+  <p class="muted">5 independent agents review the current diff (or a GitHub PR) in parallel, each with a different lens. Consolidated table, rating spread, unanimous concerns, contested calls, recommendation.</p>
+
+  <h4>Invocations</h4>
+  <pre><code>/parallel-code-review              # current branch diff vs main
+/parallel-code-review 1234         # GitHub PR #1234 (uses gh pr diff)
+/parallel-code-review src/foo.py   # scoped to one file or directory</code></pre>
+
+  <h4>The 5 lenses</h4>
+  <table>
+    <thead><tr><th>#</th><th>Lens</th><th>Focus</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Correctness</td><td>Bugs, off-by-ones, wrong conditions, broken invariants, incorrect math/SQL</td></tr>
+      <tr><td>2</td><td>Security</td><td>Injection, authz/authn, secret leakage, unsafe deserialization, path traversal</td></tr>
+      <tr><td>3</td><td>Error handling</td><td>Unhandled exceptions, swallowed errors, missing null/empty/boundary, partial failures</td></tr>
+      <tr><td>4</td><td>Readability</td><td>Naming, dead code, premature abstraction, comments that lie, oversized functions</td></tr>
+      <tr><td>5</td><td>Testing</td><td>Missing tests, weak assertions, tests that test the mock, untested branches</td></tr>
+    </tbody>
+  </table>
+
+  <h4>What it prints</h4>
+  <pre><code>## Parallel code review
+
+**Scope:** Reviewing 7 files / +312 / -88 from current branch vs main.
+
+### Ratings
+
+| # | Lens           | Rating | Headline issue                       |
+| 1 | Correctness    |   8    | [MINOR] off-by-one in pagination     |
+| 2 | Security       |   5    | [MAJOR] raw SQL string interpolation |
+| 3 | Error handling |   7    | [MINOR] unhandled JSON decode error  |
+| 4 | Readability    |   8    | [NIT] long function in routes.py     |
+| 5 | Testing        |   4    | [MAJOR] no tests for the new endpoint|
+
+**Spread:** min 4 / median 7 / max 8.
+
+### Unanimous concerns (≥3 reviewers)
+- ...
+
+### Contested calls
+- ...
+
+### Recommendation
+{synthesized recommendation, ending in ship / ship-with-fixes / do-not-ship}</code></pre>
+</div>
+
+<h2 id="planned">Planned skills</h2>
+
+<div class="card">
+  <h3>/parallel-plan-review <span class="badge planned">designed, not yet written</span></h3>
+  <p class="muted">5 independent agents review one or more plan/spec files in parallel. Different lenses than code review:</p>
+  <table>
+    <thead><tr><th>#</th><th>Lens</th><th>Focus</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Goal alignment</td><td>Does the plan solve the stated problem? Scope drift, unstated assumptions</td></tr>
+      <tr><td>2</td><td>Technical soundness</td><td>Architecture, dependencies, sequencing — will this actually work?</td></tr>
+      <tr><td>3</td><td>Risk &amp; rollback</td><td>What happens when a step fails? Reversibility, blast radius, partial-completion states</td></tr>
+      <tr><td>4</td><td>Testability</td><td>How will we know each step worked? Are success criteria measurable?</td></tr>
+      <tr><td>5</td><td>Effort &amp; decomposition</td><td>Steps too coarse / too fine? Missing prerequisites? Hidden dependencies?</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>/git-push <span class="badge pending">awaiting decisions</span></h3>
+  <p class="muted">Stage all, commit with a Claude-written conventional commit message, push current branch.</p>
+</div>
+
+<div class="card">
+  <h3>/git-push-deploy <span class="badge pending">awaiting decisions</span></h3>
+  <p class="muted">Same as <code>/git-push</code> plus run the deploy command. Deploy command source TBD — see open questions below.</p>
+</div>
+
+<div class="card">
+  <h3>/git-ship <span class="badge pending">awaiting decisions</span></h3>
+  <p class="muted">Stage, commit, push, merge to <code>main</code>, deploy. Two modes possible: PR-and-auto-merge, or fast-forward push.</p>
+</div>
+
+<div class="card">
+  <h3>/git-ship-all <span class="badge pending">awaiting decisions</span></h3>
+  <p class="muted">Walk every dirty submodule + parent repo and ship them all, then run a 5-agent parallel review across the whole batch and consolidate.</p>
+  <div class="callout warn">
+    <strong>Safety note.</strong> The original ask was "no questions, auto-resolve conflicts, leave no code unchecked-in." I want to push back on that before building it. Unattended auto-merge with auto-conflict-resolution reliably produces silently broken code, and the 5-agent review happening <em>after</em> deploy means bad code is already live. The safer variant runs the 5-agent review <em>first</em> across all dirty repos, prints a consolidated cross-repo report, then asks for one batched go/no-go. Conflicts halt the run.
+  </div>
+</div>
+
+<h2 id="using">How to use a skill</h2>
+<p>In any Claude Code session, type the slash command. Claude will load the skill's instructions for that turn, spawn the parallel reviewers, and print the report.</p>
+<pre><code>$ claude
+&gt; /parallel-code-review
+Reviewing 7 files / +312 / -88 from current branch vs main.
+[spawning 5 reviewers in parallel...]
+
+## Parallel code review
+...</code></pre>
+
+<p>Skills work from any working directory. They use <code>git</code> and <code>gh</code> in the current directory unless given an explicit path argument.</p>
+
+<h2 id="update">Update &amp; uninstall</h2>
+<pre><code># Get the latest skills (symlinks pick up changes immediately, no re-install needed)
+cd ~/claude-team-skills && git pull
+
+# Remove all symlinks (does not delete .bak.* backups)
+cd ~/claude-team-skills && ./uninstall.sh</code></pre>
+
+<h2 id="team">Share with your team</h2>
+<p>The repo is public at <a href="https://github.com/mhagberg/claude-team-skills">github.com/mhagberg/claude-team-skills</a>. Teammates run the same three install commands.</p>
+<ol>
+  <li>Clone <code>git clone https://github.com/mhagberg/claude-team-skills.git ~/claude-team-skills</code></li>
+  <li>Install <code>cd ~/claude-team-skills &amp;&amp; ./install.sh</code></li>
+  <li>Done — every <code>claude</code> session on that machine now has the skills.</li>
+</ol>
+<p>For updates, <code>git pull</code> is enough. Symlinks point at the working copy, so new content is live immediately.</p>
+
+<h2 id="new">Add a new skill</h2>
+<ol>
+  <li>Create <code>skills/&lt;your-skill&gt;/SKILL.md</code> with YAML frontmatter:
+    <pre><code>---
+name: your-skill
+description: One-line summary shown in the skill picker.
+---
+
+Instructions to Claude in plain prose. The body must be self-contained — Claude
+will not have access to other files in this repo when the skill runs.</code></pre>
+  </li>
+  <li>Run <code>./install.sh</code> again — it's idempotent and picks up new skills automatically.</li>
+  <li>Commit and push. Teammates <code>git pull</code> and it shows up.</li>
+</ol>
+
+<h2 id="how">How the parallel review actually works</h2>
+<p>The most important design rule, repeated here so it isn't lost: the 5 reviewer agents are spawned in a <strong>single assistant message</strong> with 5 <code>Agent</code> tool-use blocks. Sequential calls would defeat the entire point of the skill.</p>
+
+<p>Each agent gets:</p>
+<ul>
+  <li>The same diff (or plan) inlined into the prompt — agents don't share filesystem context with the host.</li>
+  <li>A different lens (correctness / security / error handling / readability / testing for code; goal alignment / technical soundness / risk / testability / decomposition for plans).</li>
+  <li>An explicit "you are reviewer N of 5, do not collaborate, give your honest read" framing.</li>
+  <li>A strict return-format contract — <code>RATING:</code>, <code>TOP_ISSUES:</code> with bracketed severity tags, <code>SUMMARY:</code> — so the host can table-ize without parsing prose.</li>
+</ul>
+
+<p>The host Claude then:</p>
+<ul>
+  <li>Parses each reviewer's structured return (malformed returns are noted in the table, not retried).</li>
+  <li>Shows the rating <em>spread</em> rather than averaging — disagreement is signal.</li>
+  <li>Surfaces unanimous concerns (≥3 reviewers, deduped semantically).</li>
+  <li>Calls out contested calls explicitly.</li>
+  <li>Synthesizes one recommendation: ship, ship-with-fixes, or do-not-ship.</li>
+</ul>
+
+<footer>
+  Repo: <a href="https://github.com/mhagberg/claude-team-skills">github.com/mhagberg/claude-team-skills</a><br>
+  Design spec: <code>CLAUDE.md</code> at the repo root.<br>
+  Generated 2026-05-22.
+</footer>
+
+</div>
+</body>
+</html>
