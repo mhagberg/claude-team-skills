@@ -180,7 +180,6 @@
   <ul>
     <li><a href="#install">Install</a></li>
     <li><a href="#skills">Available skills</a></li>
-    <li><a href="#planned">Planned skills</a></li>
     <li><a href="#using">How to use a skill</a></li>
     <li><a href="#update">Update &amp; uninstall</a></li>
     <li><a href="#team">Share with your team</a></li>
@@ -248,11 +247,16 @@ The installer is safe: if a skill of the same name already exists in <code>~/.cl
 {synthesized recommendation, ending in ship / ship-with-fixes / do-not-ship}</code></pre>
 </div>
 
-<h2 id="planned">Planned skills</h2>
-
 <div class="card">
-  <h3>/parallel-plan-review <span class="badge planned">designed, not yet written</span></h3>
-  <p class="muted">5 independent agents review one or more plan/spec files in parallel. Different lenses than code review:</p>
+  <h3>/parallel-plan-review <span class="badge ok">ready</span></h3>
+  <p class="muted">5 independent agents review one or more plan/spec files in parallel. Auto-discovers <code>PLAN.md</code>, <code>plans/*.md</code>, <code>ai_docs/plans/**</code>, <code>docs/plans/**</code>, and <code>**/PROJECT_PROCESS.md</code> when no path is given.</p>
+
+  <h4>Invocations</h4>
+  <pre><code>/parallel-plan-review              # auto-discover all plan files
+/parallel-plan-review docs/plans/  # scope to a directory
+/parallel-plan-review PLAN.md      # scope to one file</code></pre>
+
+  <h4>The 5 lenses</h4>
   <table>
     <thead><tr><th>#</th><th>Lens</th><th>Focus</th></tr></thead>
     <tbody>
@@ -263,29 +267,62 @@ The installer is safe: if a skill of the same name already exists in <code>~/.cl
       <tr><td>5</td><td>Effort &amp; decomposition</td><td>Steps too coarse / too fine? Missing prerequisites? Hidden dependencies?</td></tr>
     </tbody>
   </table>
+  <p class="muted">Final recommendation lands on one of: execute-as-written, execute-with-revisions, rework.</p>
 </div>
 
 <div class="card">
-  <h3>/git-push <span class="badge pending">awaiting decisions</span></h3>
-  <p class="muted">Stage all, commit with a Claude-written conventional commit message, push current branch.</p>
+  <h3>/git-push <span class="badge ok">ready</span></h3>
+  <p class="muted">Stage all, write a conventional-commit message from the diff, commit, push (creates upstream if needed).</p>
+  <p class="muted"><strong>Refuses to run on:</strong> <code>main</code> / <code>master</code>; dirty <code>.env</code>, <code>*.pem</code>, <code>*.key</code>, <code>credentials.json</code>, <code>*secret*</code> files. Never <code>--force</code>, <code>--no-verify</code>, or <code>--amend</code>.</p>
 </div>
 
 <div class="card">
-  <h3>/git-push-deploy <span class="badge pending">awaiting decisions</span></h3>
-  <p class="muted">Same as <code>/git-push</code> plus run the deploy command. Deploy command source TBD — see open questions below.</p>
-</div>
-
-<div class="card">
-  <h3>/git-ship <span class="badge pending">awaiting decisions</span></h3>
-  <p class="muted">Stage, commit, push, merge to <code>main</code>, deploy. Two modes possible: PR-and-auto-merge, or fast-forward push.</p>
-</div>
-
-<div class="card">
-  <h3>/git-ship-all <span class="badge pending">awaiting decisions</span></h3>
-  <p class="muted">Walk every dirty submodule + parent repo and ship them all, then run a 5-agent parallel review across the whole batch and consolidate.</p>
+  <h3>/git-push-deploy <span class="badge ok">ready</span></h3>
+  <p class="muted"><code>/git-push</code> plus running the repo's <code>.claude-deploy</code> command after the push succeeds.</p>
+  <h4><code>.claude-deploy</code> file format</h4>
+  <pre><code># One branch pattern per line, first match wins
+main: bun run deploy:prod
+preview/*: bun run deploy:preview
+*: bun run deploy:branch</code></pre>
+  <p class="muted">No <code>.claude-deploy</code> = the skill stops with a message before pushing. Use <code>/git-push</code> if you want push-only.</p>
   <div class="callout warn">
-    <strong>Safety note.</strong> The original ask was "no questions, auto-resolve conflicts, leave no code unchecked-in." I want to push back on that before building it. Unattended auto-merge with auto-conflict-resolution reliably produces silently broken code, and the 5-agent review happening <em>after</em> deploy means bad code is already live. The safer variant runs the 5-agent review <em>first</em> across all dirty repos, prints a consolidated cross-repo report, then asks for one batched go/no-go. Conflicts halt the run.
+    <strong>Hard-excluded paths</strong> (skill refuses to run, even if you have a <code>.claude-deploy</code>): anything under <code>/odoocker/</code> or <code>/odoo-*</code>, repos with <code>odoo-bin</code> at root, and any <code>*/sage_dbt</code> or <code>*/dbt_rollup</code>. Those pipelines are owned by external automation.
   </div>
+</div>
+
+<div class="card">
+  <h3>/git-ship <span class="badge ok">ready</span></h3>
+  <p class="muted"><code>/git-push-deploy</code> plus opening a PR and auto-merging once CI is green. Falls back to <code>--ff-only</code> if no GitHub remote.</p>
+  <ol>
+    <li>Stage, conventional commit, push.</li>
+    <li><code>gh pr create --fill --base &lt;default-branch&gt;</code> (or reuse existing).</li>
+    <li><code>gh pr merge --squash --auto --delete-branch</code> — waits for required checks.</li>
+    <li>After merge: checkout default branch, pull, run <code>.claude-deploy</code> for that branch.</li>
+  </ol>
+  <p class="muted">Pass <code>--no-deploy</code> if the repo has no <code>.claude-deploy</code> and you just want to merge. Polls for merge state up to 15 minutes; if <code>BLOCKED</code> (failed CI, conflicts, required reviews), halts and reports — never bypasses branch protection.</p>
+</div>
+
+<div class="card">
+  <h3>/git-ship-all <span class="badge ok">ready</span></h3>
+  <p class="muted">Highest-blast-radius skill. Discovers every dirty repo (parent + submodules), runs a pre-flight 5-agent parallel review across the combined diffs, asks for one batched go/no-go, then ships each repo via the <code>/git-ship</code> flow. Parent submodule bumps land last.</p>
+
+  <h4>Flags</h4>
+  <ul>
+    <li><code>--dry-run</code> — discover and review only; no push, merge, or deploy.</li>
+    <li><code>--fire</code> — skip the human go/no-go prompt. <strong>Unanimous BLOCKERs from the review still halt it.</strong></li>
+  </ul>
+
+  <div class="callout warn">
+    <strong>Conflicts ALWAYS halt — no auto-resolution.</strong> If any repo's PR merge reports <code>BLOCKED</code> (conflicts, failed CI, required reviews), the whole run stops at that repo. Already-shipped repos stay shipped. No <code>-X ours/theirs</code>, no accept-incoming, no force push. The design premise is that silent auto-resolution destroys code.
+  </div>
+
+  <h4>Discovery example</h4>
+  <pre><code>| Repo                          | Branch     | Dirty files | Unpushed | Status   |
+|-------------------------------|------------|------------:|---------:|----------|
+| &lt;parent&gt;                      | feature/x  |          3  |       2  | dirty    |
+| dataxcel-board-reports-...    | main       |          0  |       0  | clean    |
+| odoo-bank-reconciliation      | feature/y  |          7  |       0  | dirty    |
+| odoocker                      | -          |          -  |       -  | excluded |</code></pre>
 </div>
 
 <h2 id="using">How to use a skill</h2>
