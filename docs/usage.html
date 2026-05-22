@@ -325,6 +325,74 @@ preview/*: bun run deploy:preview
 | odoocker                      | -          |          -  |       -  | excluded |</code></pre>
 </div>
 
+<div class="card">
+  <h3>/new-project <span class="badge ok">ready</span></h3>
+  <p class="muted">Scaffold a brand-new project through 7 phases, pausing for <code>continue</code> between each. Produces a fully cross-linked documentation structure with mermaid diagrams, ready for AI agents to maintain (dark-factory pattern).</p>
+
+  <h4>The 6 brainstorm agents (Phase 1)</h4>
+  <table>
+    <thead><tr><th>#</th><th>Agent</th><th>Lens</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Product strategist</td><td>User value, market fit, what NOT to build, monetization</td></tr>
+      <tr><td>2</td><td>Software architect</td><td>System shape, boundaries, tech-stack rationale, integration points</td></tr>
+      <tr><td>3</td><td>UX / human factors</td><td>Friction, accessibility, what users actually do vs say</td></tr>
+      <tr><td>4</td><td>Security &amp; compliance</td><td>Threat model, data protection, regulatory exposure</td></tr>
+      <tr><td>5</td><td>Operations / SRE</td><td>Deploy, monitor, scaling, on-call burden, cost shape</td></tr>
+      <tr><td>6</td><td>Red team / skeptic</td><td>What kills this, why it won't work, dumb-question critique</td></tr>
+    </tbody>
+  </table>
+
+  <h4>The 7 phases</h4>
+  <ol>
+    <li><strong>Seed</strong> — name, path, one-paragraph concept, stack hints.</li>
+    <li><strong>6-agent brainstorm</strong> — parallel, structured return, consolidated to <code>docs/brainstorm/&lt;slug&gt;-brainstorm.md</code>.</li>
+    <li><strong>Requirements &amp; spec</strong> — <code>docs/requirements/{functional,non-functional,constraints}.md</code>.</li>
+    <li><strong>Formal plan</strong> — <code>docs/plans/PLAN.md</code> with 3–6 phases, out-of-scope, open decisions.</li>
+    <li><strong>AI dark-factory design</strong> — <code>docs/architecture/ai-dark-factory.md</code> with mermaid agent-loop diagram.</li>
+    <li><strong>CLAUDE.md + README + architecture diagrams</strong> — CLAUDE.md router ≤200 lines, README with system-context diagram, 8 individual architecture docs each with their own mermaid diagram.</li>
+    <li><strong>PROJECT-PLAN.md</strong> — phases / features / bugs scaffolding, every doc bidirectionally backlinked.</li>
+    <li><strong>ENTERPRISE-STANDARDS.md</strong> — 9-section checklist (security, compliance, reliability, observability, ops, quality, docs, accessibility, vendor) with initial status per item.</li>
+  </ol>
+  <p class="muted">Plus a final commit + optional <code>gh repo create</code> + optional add-as-submodule step.</p>
+
+  <div class="callout">
+    <strong>Refuses to run</strong> if the target path already contains a <code>CLAUDE.md</code> — directs you to <code>/harden-project</code> instead.
+  </div>
+</div>
+
+<div class="card">
+  <h3>/harden-project <span class="badge ok">ready</span></h3>
+  <p class="muted">Take an existing repo and retrofit the same documentation/process structure on top, starting from a code audit. Produces a documentation overlay — <strong>does not modify production code</strong>. Refactors and remediation happen later under the new hardening plan.</p>
+
+  <h4>The 6 audit agents (Phase 1)</h4>
+  <table>
+    <thead><tr><th>#</th><th>Agent</th><th>Lens</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Tech-debt auditor</td><td>Fragile code, missing abstractions, dead code, dependency rot</td></tr>
+      <tr><td>2</td><td>Security &amp; secrets</td><td>Hardcoded secrets, weak auth, injection surfaces, dependency CVEs</td></tr>
+      <tr><td>3</td><td>Test / quality reviewer</td><td>Coverage gaps, brittle tests, tests-that-test-the-mock</td></tr>
+      <tr><td>4</td><td>Docs &amp; onboarding</td><td>Undocumented behavior, tribal knowledge, stale README</td></tr>
+      <tr><td>5</td><td>Ops &amp; reliability</td><td>Deploy fragility, missing observability, no runbooks/SLO</td></tr>
+      <tr><td>6</td><td>Enterprise-readiness skeptic</td><td>What blocks procurement / SOC2 review? Licensing, SBOM, audit trail</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">Audit agents return an extra <code>GAPS_VS_ENTERPRISE</code> field categorized as security / reliability / observability / compliance / docs / quality / ops — this feeds the ENTERPRISE-STANDARDS.md initial status directly.</p>
+
+  <h4>How it differs from /new-project</h4>
+  <ul>
+    <li><strong>Phase 0 audits the repo</strong> instead of asking for a seed concept.</li>
+    <li><strong>Plan is a hardening plan</strong>: Safety net → Security baseline → Reliability baseline → Documentation completion → Enterprise polish → Architecture improvements. Safety net always first.</li>
+    <li><strong>Never overwrites existing files</strong>: merges into <code>&lt;filename&gt;.proposed.md</code> and shows you the diff.</li>
+    <li><strong>Reverse-engineers diagrams</strong> from the code; anything it can't infer is marked <code>TODO: confirm with maintainer</code> rather than guessed.</li>
+    <li><strong>Bugs index seeded from <code>gh issue list</code></strong> if a GitHub remote exists.</li>
+    <li><strong>Commits to a <code>hardening/scaffold</code> branch and opens a PR by default</strong> — easy to back out.</li>
+  </ul>
+
+  <div class="callout warn">
+    <strong>No production code is changed by this skill.</strong> It only adds <code>docs/</code>, top-level <code>CLAUDE.md</code> / <code>README.md</code> / <code>PROJECT-PLAN.md</code> / <code>ENTERPRISE-STANDARDS.md</code> (or <code>.proposed.md</code> variants when they exist). The hardening plan tells you what to do next.
+  </div>
+</div>
+
 <h2 id="using">How to use a skill</h2>
 <p>In any Claude Code session, type the slash command. Claude will load the skill's instructions for that turn, spawn the parallel reviewers, and print the report.</p>
 <pre><code>$ claude
