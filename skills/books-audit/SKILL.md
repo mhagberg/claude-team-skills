@@ -179,6 +179,40 @@ this order:
 Keep the report skimmable: tables and bullets, lead with what matters. End with
 a one-line "biggest single action to take this week."
 
+**Every actionable finding, opportunity, and recommendation must carry an
+`action` — a ready-to-paste Claude Code prompt** that, pasted back into a Claude
+Code session, would carry out (or scope) that fix. Write the action in the
+imperative, name the company/`company_id`, accounts, and $ amounts, and for
+anything that writes to Odoo end with "show me the plan before posting." For
+findings that are CPA judgment calls (reasonable comp, entity election), the
+action should produce a memo/worksheet, not a posting. Leave `action` empty for
+pure INFO items.
+
+## Step 4 — emit the HTML report and open it (you do this last)
+
+After printing the consolidated report to chat, write the same content to a
+findings JSON and render it to a styled, self-contained HTML file that opens
+automatically — with each action item rendered as a one-click **Copy** button so
+the user can paste it straight back into Claude Code.
+
+1. Write the consolidated findings to `/tmp/books_audit_findings.json` following
+   the schema documented at the top of `scripts/render_report.py` (keys:
+   `generated`, `companies`, `rating_spread`, `ratings`, `sections` [each item
+   has `severity`, `company`, `text`, `action`], `tax_opportunities`,
+   `tax_red_flags`, `cfo_perspective`, `biggest_action`). Numbers come from the
+   dossier; `action` strings are the paste-ready prompts from Step 3.
+2. Render and open it:
+
+```bash
+PYTHON=/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/.venv/bin/python
+SKILL_DIR="$HOME/.claude/skills/books-audit"
+$PYTHON "$SKILL_DIR/scripts/render_report.py" /tmp/books_audit_findings.json /tmp/books_audit_report.html
+```
+
+   The renderer writes `/tmp/books_audit_report.html` and opens it (macOS `open`,
+   Windows `start`, else the default browser). Tell the user the report opened
+   and that each finding has a copy-paste action button.
+
 ## Notes
 
 - This is an analysis run; it changes nothing in Odoo. Re-run any time.
