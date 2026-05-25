@@ -8,6 +8,7 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 |-------|--------------|
 | `/parallel-code-review` | 5 independent agents review the current `git diff` (or a PR), each rate 1–10. Consolidated table + recommendations. |
 | `/parallel-plan-review` | 5 independent agents review discovered plan files in parallel, each rate 1–10. Consolidated table + recommendations. |
+| `/books-audit` | 10 independent agents audit the Xcel + Hagberg Odoo books in parallel — balance integrity, bookkeeping mistakes, tax deductions, tax red flags. Returns a P&L summary + CFO/CTO perspective. Read-only. |
 
 See [`CLAUDE.md`](./CLAUDE.md) for the design spec.
 
