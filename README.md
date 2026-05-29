@@ -40,29 +40,23 @@ underlying process is the HTML playbook at
    `/onboard-customer-postcall <slug> --netbird-ip <ip>`
 4. **Provision the hub** (the default dashboard menu — iframed into their Metabase):
    `/onboard-customer-hub <slug> --company "<name>" --metabase-url https://<slug>.xcel.report --metabase-api-key <key>`
-<<<<<<< HEAD
-5. **Provision the CEO AI Briefing** (default — 60-day trial built in):
+5. **Validate every dashboard the hub will surface** (read-only):
+   `/validate-hub-dashboards <slug> [--timeout 60]`
+   Hard gate — if any card fails, fix before proceeding (Hallowell-style
+   stale-field-id is the most common cause; see `metabase-migration/pmbql_migrate.py`).
+6. **Validate the Metabase numbers against Sage** (read-only — no writes,
+   runs BEFORE any user is added or invited):
+   `/validate-customer-metabase <slug> [--reports balance,income,wip,jobcost] [--tolerance 0.01]`
+   Runs every available Metabase-vs-Sage validator. **Hard gate —
+   Mike's rule (2026-05-29):** do NOT add users until validation is green.
+7. **Provision the CEO AI Briefing** (default — 60-day trial built in):
    `/onboard-customer-briefing <slug>`
    (pass `--paid` for a customer who has purchased the briefing outright,
    or `--trial-days N` to override the default 60.)
-6. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
-=======
-5. **Validate the Metabase numbers against Sage** (read-only — no writes,
-   runs BEFORE any user is added or invited):
-   `/validate-customer-metabase <slug> [--reports balance,income,wip,jobcost] [--tolerance 0.01]`
-   Runs every available Metabase-vs-Sage validator: Balance Sheet vs Sage
-   Excel, Income Statement vs Sage Excel, the `cash-basis-report` 51-test
-   pytest suite, AR/AP Aging vs Sage exports, and `posting_date` filter
-   coverage. **Hard gate — Mike's rule (2026-05-29):** "we need to make
-   sure the numbers validate against the Sage reports before we add the
-   users and give them access." If any validator fails, the skill refuses
-   to print a `Next:` pointer and exits non-zero. **Do NOT add users until
-   validation is green** — fix the underlying dbt/dashboard/Sage mismatch
-   first and re-run.
-6. **Optional paid add-on — CEO AI Briefing:** `/onboard-customer-briefing <slug>`
-   (only if the customer has purchased it — see the "Paid add-on" section below).
-7. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
->>>>>>> origin/feat/validate-customer-metabase
+8. **Finalize the Metabase tenant** (last step before go-live — adds users,
+   verifies base URL + timezone, deactivates leftover demo users):
+   `/finalize-customer-metabase <slug> --users <email1>,<email2> [--admin-users ...]`
+9. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
    (pre-call already defaults new customers to `snapshots=True`; only use this
    to flip an existing customer).
 
