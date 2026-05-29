@@ -16,21 +16,24 @@ must be confirmed. The follow-up Git push is also RISKY.
 
 ## Step 1 — validate args
 
+## Where each arg comes from
+
+| Arg | Required? | Where it comes from |
+|-----|-----------|---------------------|
+| `<slug>` | Required | Same slug used in every prior onboarding skill (`/onboard-customer-precall` → `/onboard-customer-oncall` → `/onboard-customer-postcall`). |
+| `--company "<name>"` | Optional | Display name. Defaults to title-cased slug (`lunstrum` → `Lunstrum`). Mike's `--company-name` from `/onboard-customer-precall` is the canonical source if it was supplied. |
+| `--metabase-url <url>` | Optional | Defaults to `https://<slug>.xcel.report` — the tenant created by `/onboard-customer-precall` Step 3. |
+| `--metabase-api-key <key>` | Optional | Defaults to the shared `single.xcel.report` key `mb_OtooFk7pInjCBF9EzZb4sT/9wsXCXWIJOCAdCbA2blw=` (same key every other onboarding skill uses on shared-cluster customers). For dedicated-instance customers (`dd`, `brekhus`, `jolma`, `vertex`, `4x`, `burbach`, `ipwlc`, `nvision`, `pcg`), reads the row from `XcelConnectAndUpdater/CLAUDE.md` Metabase Instances & API Keys table. Pass `--metabase-api-key` only to override the resolved value. |
+| `--domains <list>` | Optional | Comma-separated email domains for Hub view-count filtering. Skip if unknown — only matters for Hub's usage metrics. |
+| `--restrict-collection <id>` | Optional | If scoping the Hub to one Metabase collection. Default: not set (Hub surfaces every non-excluded dashboard). |
+
 Required:
 - `<slug>` — must match the customer slug from earlier onboarding skills.
 
-Required (prompt if missing — one at a time):
-- `--company "<name>"` — display name (e.g. `"Acme Construction"`).
-- `--metabase-url <url>` — usually `https://<slug>.xcel.report`.
-- `--metabase-api-key <key>` — Metabase admin API key for the customer
-  tenant. Mike generates this in the Metabase admin panel; tell the user
-  where to find it if they don't have one.
+Resolve defaults silently — do NOT prompt for values that have sensible
+defaults. Only prompt if the slug fails the regex.
 
-Optional pass-throughs:
-- `--domains acme.com,acme.io` — used by Hub for view-count filtering.
-- `--restrict-collection <id>` — if scoping the Hub to one Metabase collection.
-
-Print a one-line plan summary.
+Print a one-line plan summary with all resolved values.
 
 ## Step 2 — run register_tenant.py (RISKY — confirm)
 

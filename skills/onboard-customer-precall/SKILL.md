@@ -1,137 +1,147 @@
 ---
 name: onboard-customer-precall
-description: Pre-call staging for a new DataXcel customer — NetBird provision, per-customer Sage SQL script, EKS Metabase tenant, and drafts of profiles.yml + single_customers.py entries. Run ~30 min before the IT meeting.
+description: Pre-call staging for a new DataXcel customer — 1Password entry prompt, EKS Metabase tenant clone (with ownership transfer + session-blocking workaround), Namecheap CNAME instructions, draft profiles.yml/single_customers.py entries (with TBD placeholders for values that don't exist yet), and NetBird provisioning with a placeholder SQL port that gets fixed in /onboard-customer-oncall. Only required arg is <slug>. Run ~30 min before the IT meeting.
 ---
 
 # onboard-customer-precall
 
-You are running the **onboard-customer-precall** skill. Goal: get ~99% of a new
-customer's infrastructure staged BEFORE the IT call. The on-call work is then
-just (a) customer IT runs two scripts, (b) you capture the NetBird IP for the
-post-call skill.
+You are running the **onboard-customer-precall** skill. Goal: get ~99% of a
+new customer's infrastructure staged BEFORE the IT call — without requiring
+any value the operator does not yet have.
+
+## Where each arg comes from
+
+This is the principle (see `feedback_skill_args_match_phase.md`): every
+required arg here MUST be a value the operator already knows at pre-call
+time, with no detour. Values that only become available during the live
+call (NetBird IP, real SQL port, Sage company DB name, `dataxcel` SQL
+password) are NOT required here — they are collected by the next skill
+(`/onboard-customer-oncall`).
+
+| Arg | Required? | Where it comes from |
+|-----|-----------|---------------------|
+| `<slug>` | Required | Mike's choice. Lowercase alnum + dashes only (regex `^[a-z0-9-]+$`). Convention: the customer's short name (`lunstrum`, `acme`, `burbach`). |
+| `--company-name "<Display>"` | Optional | The display name used for Metabase site name and Kustomize labels. Defaults to title-cased slug (`lunstrum` → `Lunstrum`). |
+
+That is the full surface. No `--sql-port`, no `--sage-dbs`, no
+`--dataxcel-password`. Those values do not exist yet at pre-call time and
+trying to require them invited the exact bad-placeholder failure Mike hit
+during the Lunstrum onboarding.
 
 Source of truth for the full process:
 `/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater/docs/new-customer-onboarding.html`.
 
-**Execution mode:** local file edits and read-only checks run without prompting.
-Anything that writes to a remote (NetBird API, kubectl apply, Git push,
-Metabase API) MUST ask for explicit `yes` confirmation first, showing exactly
-what will happen.
+**Execution mode:** local file edits and read-only checks run without
+prompting. Anything that writes to a remote (NetBird API, kubectl apply,
+Git push, Metabase API) MUST ask for explicit `yes` confirmation first,
+showing exactly what will happen.
 
 ## Step 1 — validate args
 
 Required:
-- `<slug>` — customer slug, lowercase alnum+dashes only. Regex `^[a-z0-9-]+$`.
+- `<slug>` — regex `^[a-z0-9-]+$`. Reject and stop on mismatch with a
+  one-line error pointing at the convention.
 
-Optional (prompt if missing):
-- `--sql-port <port>` — Sage SQL dynamic port. Default if unset: ask the user.
-- `--sage-dbs <CompanyA,CompanyB>` — comma-separated Sage company DB names.
-- `--dataxcel-password <pw>` — password for the `dataxcel` SQL login. If unset,
-  prompt for it AND remind the user to save it in 1Password under
-  `<slug>_metabase_user`.
+Optional:
+- `--company-name "<Display>"` — defaults to slug with the first character
+  upper-cased and `-` → ` ` (e.g. `lunstrum-glass` → `Lunstrum Glass`).
+  Used for the Metabase `site-name` setting and the kustomize overlay
+  `customer=<display>` label.
 
-Reject if any required arg is missing or `<slug>` fails the regex. Print a
-one-line plan summary back to the user with all resolved args BEFORE running
-anything.
+Print a one-line plan summary back to the user with all resolved args
+BEFORE running anything.
 
-## Step 2 — NetBird provisioning (RISKY — confirm)
+## Step 2 — 1Password entry reminder (PROMPT — no remote write)
 
-Confirm with the user, exact text:
+Tell the user, before any other work:
 
-> Run `cd XcelConnectAndUpdater && ./netbird-provision.sh --customer <slug>
-> --sql-port <port>`? This creates a NetBird group, setup key, and policy for
-> the customer. Type `yes` to proceed.
+> Before we continue, create a 1Password entry titled `<slug>_metabase_user`
+> with a generated password (Mike's convention: 1Password's strong-password
+> generator, no symbols requirement). Paste the password back here so the
+> EKS clone and the Postgres app DB user creation can use it. Type the
+> password (it will only live in this session — not written to disk).
 
-On `yes`:
+Capture the password into an in-session variable `LUNSTRUM_METABASE_PW`.
+Do NOT echo it back in plaintext after capture. Re-prompt if blank.
 
-```bash
-cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater
-./netbird-provision.sh --customer <slug> --sql-port <port>
+If the user already has the password (re-running the skill, etc.) accept
+`existing` as a response and re-prompt for the value. Do not silently
+proceed without one — the EKS clone step needs it.
+
+## Step 3 — Metabase EKS tenant clone (RISKY — multiple confirms)
+
+Walk through one sub-step at a time. Do NOT bundle confirmations.
+
+### 3a. duplicate_single.sh — clone the Postgres app DB (RISKY — confirm)
+
+The wrapper script lives at
+`/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/diglet/k8s/metabase_deployment/duplicate_single.sh`.
+It clones the `single_metabase_app` Postgres database into
+`<slug>_metabase_app`.
+
+Before running, read the top of `duplicate_single.sh` to find the
+credential block the user must edit (PG superuser password, new tenant
+`<slug>_metabase_user` password, admin email). Show the current values,
+sed in the new ones (using the `<slug>` + captured password from Step 2),
+show the diff, then ask:
+
+> Run `duplicate_single.sh <slug>`? This creates a new Postgres app DB for
+> the tenant Metabase. Type `yes` to proceed.
+
+**Mandatory pre-step: session-blocking workaround** (Mike hit this during
+the Lunstrum onboarding — `pg_dump` fails with "source database is being
+accessed by other users" if even one Metabase pod is still pointing at
+`single_metabase_app`):
+
+```sql
+ALTER DATABASE single_metabase_app ALLOW_CONNECTIONS false;
+SELECT pg_terminate_backend(pid)
+  FROM pg_stat_activity
+ WHERE datname = 'single_metabase_app' AND pid <> pg_backend_pid();
+-- CREATE DATABASE <slug>_metabase_app TEMPLATE single_metabase_app OWNER <slug>_metabase_user;
+ALTER DATABASE single_metabase_app ALLOW_CONNECTIONS true;
 ```
 
-Capture the setup key from stdout. Show it to the user (they will paste it
-during the call). Then append a row to the setup-keys table in
-`XcelConnectAndUpdater/CLAUDE.md` (LOCAL EDIT — no confirm). Use the existing
-table format. If the file or table is missing, abort with a clear error
-pointing at the playbook.
+Wrap the `duplicate_single.sh` invocation so it runs the
+`ALLOW_CONNECTIONS false` + `pg_terminate_backend` block immediately
+before the `CREATE DATABASE ... TEMPLATE` call, and the
+`ALLOW_CONNECTIONS true` immediately after. The wrapper must restore
+`ALLOW_CONNECTIONS true` even on failure (trap on error).
 
-## Step 3 — add peer to `Sage100ContractorDatabases` group (RISKY — confirm)
+**Mandatory post-step: ownership transfer.** Mike forgot to run this
+manually for Lunstrum and the EKS pod could not write to the cloned DB.
+After the clone:
 
-This is the Dietrich-fix gotcha: without this step Metabase pods can't reach
-the customer's Sage box. The curl recipe lives in
-`XcelConnectAndUpdater/CLAUDE.md` under the Dietrich-fix section. Read it, fill
-in the customer name, show the user the exact curl chain that will run, and
-ask for `yes`. On confirm, run it. On any non-200 response, stop and print the
-error verbatim — do not retry.
-
-(The peer won't exist yet at this stage since the customer hasn't installed
-NetBird. That's fine — record this as a post-call step instead and tell the
-user it will be re-attempted in `/onboard-customer-postcall`. Mark it `TODO`
-in the summary.)
-
-## Step 4 — generate per-customer Sage SQL (LOCAL — no confirm)
-
-```bash
-cp /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater/setup-sage-readonly.sql \
-   /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater/setup-sage-readonly-<slug>.sql
+```sql
+-- Transfer every object in the cloned DB to the new tenant role.
+REASSIGN OWNED BY single_metabase_user TO <slug>_metabase_user;
+-- Drop any leftover privileges from the template owner on the new DB.
+DROP OWNED BY single_metabase_user CASCADE;
 ```
 
-Edit the new file in place (use the Edit tool):
-- Replace the `:setvar DATAXCEL_PASSWORD "..."` line with the captured password.
-- Replace the `:setvar SAGE_COMPANY_DBS "..."` line with the comma-separated DBs.
+This MUST run inside the new `<slug>_metabase_app` database, not in
+`postgres`. The script must connect to the cloned DB explicitly.
 
-Print to the user the exact email/SCP one-liner they will hand to customer IT:
+On `yes` for sub-step 3a, run the wrapper end-to-end. On failure: print
+the full Postgres error, restore `ALLOW_CONNECTIONS true` on the source
+DB, and stop. Do NOT continue to 3b.
 
-> Send this file to customer IT (do not commit it — it has the SQL password):
-> `setup-sage-readonly-<slug>.sql`. Tell them to run it in SSMS connected as
-> `sa` (or any sysadmin login), against the Sage 100 SQL instance.
-
-## Step 5 — Metabase EKS tenant (RISKY — multiple confirms)
-
-Walk through one step at a time. Do NOT bundle confirmations.
-
-### 5a. `duplicate_single.sh` (RISKY — confirm)
+### 3b. create_customer_template.sh — render the Kustomize overlay (RISKY — confirm)
 
 ```bash
 cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/diglet/k8s/metabase_deployment
+./create_customer_template.sh <slug>
 ```
 
-Read the top of `duplicate_single.sh` to find the credential block the user
-must edit (DB password, admin email, etc.). Show the current values, prompt
-the user for the new values, sed them in place, then ask:
+Same pattern as 3a: read the script, find the edit block, prompt for any
+missing values, show the diff, ask for `yes`, then run.
 
-> Edited duplicate_single.sh credentials for `<slug>`. Show diff?
+### 3c. kubectl apply -k overlays/<slug> (RISKY — confirm)
 
-Show the diff. Then ask:
+> Run `kubectl apply -k overlays/<slug>` against the EKS cluster? This
+> deploys the new tenant. Type `yes` to proceed.
 
-> Run `./duplicate_single.sh`? This provisions a new PostgreSQL app DB for the
-> tenant Metabase. Type `yes` to proceed.
-
-### 5b. DNS CNAME — print only, do NOT touch DNS
-
-Print the Namecheap record fields the user must add manually:
-
-```
-Type:  CNAME
-Host:  <slug>
-Value: <broker hostname from playbook>
-TTL:   Automatic
-```
-
-Tell the user: "Add this in Namecheap, then type `dns-done` to continue."
-Pause. Wait for `dns-done`.
-
-### 5c. `create_customer_template.sh` (RISKY — confirm)
-
-Same pattern as 5a: read the script, find the edit block, prompt for values,
-sed in place, show diff, ask for `yes`, then run.
-
-### 5d. `kubectl apply -k overlays/<slug>` (RISKY — confirm)
-
-> Run `kubectl apply -k overlays/<slug>` against the EKS cluster? This deploys
-> the new tenant. Type `yes` to proceed.
-
-On `yes`, run it. Then wait for pods:
+On `yes`, run it. Wait for pods:
 
 ```bash
 until kubectl get pods -n metabase -l customer=<slug> 2>/dev/null | grep -q Running; do
@@ -140,86 +150,132 @@ until kubectl get pods -n metabase -l customer=<slug> 2>/dev/null | grep -q Runn
 done
 ```
 
-(Use a sensible timeout — give up after ~5 minutes and tell the user to debug.)
+Give up after ~5 minutes and tell the user to debug.
 
-## Step 6 — configure Metabase (LOCAL — no confirm)
+## Step 4 — Namecheap CNAME (manual; print only, do not touch DNS)
 
-Ask for `--name "<Display Name>"` and `--timezone <tz>` if not supplied.
+Cannot automate Namecheap without an API key, so print the record fields
+verbatim:
 
-```bash
-cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting
-PYTHONPATH=. .venv/bin/python scripts/configure_metabase_instance.py \
-    --customer <slug> --name "<display>" --timezone <tz>
+```
+Type:  CNAME
+Host:  <slug>
+Value: <broker hostname from playbook>
+TTL:   Automatic
 ```
 
-## Step 7 — draft `profiles.yml` + `single_customers.py` entries (PRINT, do not commit)
+Tell the user: "Add this CNAME in Namecheap, then type `dns-done` to
+continue." Pause. Wait for `dns-done`.
 
-Print to the user, ready to paste:
+## Step 5 — draft profiles.yml + single_customers.py entries (LOCAL, print only — do NOT commit)
 
-**`profiles.yml` block** (to paste into
-`/Users/mike/dev/projects/etl_pipeline/airflow/sage_dbt/profiles.yml` AFTER
-the call, once the NetBird IP is known):
+These get pushed by `/onboard-customer-postcall` once the NetBird IP, SQL
+port, and Sage DB name are known. At pre-call time they are PLACEHOLDERS.
+
+**profiles.yml block** — print, do not edit any file yet:
 
 ```yaml
-<slug>_dataxcel_analytics:
+<slug>:
   target: prod
   outputs:
     prod:
       type: sqlserver
       driver: ODBC Driver 18 for SQL Server
-      server: "<NETBIRD_IP_TBD>"
-      port: <sql-port>
-      database: dataxcel_analytics
-      schema: dbo
+      server: "<NETBIRD_IP_TBD>"      # filled by /onboard-customer-postcall
+      port: <SQL_PORT_TBD>             # filled by /onboard-customer-postcall
+      database: "<SAGE_DB_TBD>"        # filled by /onboard-customer-postcall (real DB name from sys.databases)
+      schema: dbx_tests
       user: dataxcel
-      password: "<paste from 1Password>"
+      password: "<DATAXCEL_PW_TBD>"    # filled by /onboard-customer-postcall (from 1Password)
+      threads: 4
       trust_cert: true
 ```
 
-**`single_customers.py` entry** (default `snapshots=True` per the rollout plan):
+**single_customers.py entry** (default `snapshots=True` per the rollout
+plan):
 
 ```python
-DBTConfig(customer="<slug>", snapshots=True),
+DBTConfig(customer="<slug>", schedule="45 13-23 * * *", snapshots=True),
 ```
 
-Tell the user: "Don't commit these yet — the post-call skill fills in the
-NetBird IP and pushes both files."
+Tell the user: "Don't commit these yet — `/onboard-customer-postcall`
+fills in the four TBD values and pushes both files."
+
+## Step 6 — NetBird provisioning with placeholder SQL port (RISKY — confirm)
+
+This is the load-bearing decision: `netbird-provision.sh` requires
+`--sql-port`, but the real SQL port is not known until customer IT runs
+the install script. **Provisioning with a placeholder port is safe**
+because:
+
+- The customer NetBird **group**, **setup key**, and per-customer
+  **install URL** (`connect-netbird-<slug>.ps1` + `quickstart-<slug>.html`
+  on the broker) are valid regardless of port.
+- The only thing the placeholder affects is the **access policy** rule
+  (`xcel-broker-to-<slug>` TCP port restriction). `/onboard-customer-oncall`
+  updates the policy port the moment IT reports the real port back.
+
+Use `1433` as the placeholder. The on-call skill rewrites it.
+
+Confirm with the user, exact text:
+
+> Run `./netbird-provision.sh --customer <slug> --sql-port 1433` (placeholder
+> port — `/onboard-customer-oncall` updates the policy to the real port the
+> install script discovers)? This creates the NetBird customer group with
+> `auto_groups` for both `customer-<slug>` and `Sage100ContractorDatabases`
+> (so the Dietrich-fix is automatic on registration), a one-off setup key,
+> and an access policy. It also generates and uploads the per-customer
+> install script + quickstart HTML to the broker and verifies both URLs
+> return HTTP 200. Type `yes` to proceed.
+
+On `yes`:
+
+```bash
+cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater
+./netbird-provision.sh --customer <slug> --sql-port 1433
+```
+
+Capture the setup key and the printed `📧 EMAIL TO CUSTOMER IT:` URL
+(`https://broker.xcel.report/updates/quickstart-<slug>.html`) from stdout.
+If the script exits non-zero, abort and surface the error — do NOT
+fabricate a URL.
+
+After success, append a row to the setup-keys table in
+`XcelConnectAndUpdater/CLAUDE.md` (LOCAL EDIT — no confirm). Use the
+existing table format and mark the SQL port column as `1433 (placeholder
+— update in oncall)`. If the file or table is missing, abort with a
+clear error pointing at the playbook.
+
+## Step 7 — print the IT-facing URL
+
+Print the EXACT URL Mike sends to Chris/customer IT:
+
+```
+https://broker.xcel.report/updates/quickstart-<slug>.html
+```
+
+That URL is verified 200 by `netbird-provision.sh`. Do NOT print a
+placeholder like `<PASTE-SETUP-KEY-HERE>` — the setup key is already baked
+into the per-customer `connect-netbird-<slug>.ps1` that the HTML loads.
 
 ## Step 8 — summary + next step
 
 Print a clean summary:
 
 ```
-Customer: <slug>
-NetBird setup key: <key>     (give this to customer IT)
-Per-customer SQL: XcelConnectAndUpdater/setup-sage-readonly-<slug>.sql
-Metabase tenant: deployed (or status)
-profiles.yml draft: shown above
-single_customers.py draft: shown above
-Sage100ContractorDatabases group add: TODO (post-call, once peer exists)
+Customer: <slug>   (company: <display>)
+1Password entry: <slug>_metabase_user (operator confirmed)
+Metabase EKS tenant: deployed (or status)
+DNS CNAME: customer added (dns-done received)
+profiles.yml draft: printed above (TBD placeholders — postcall fills)
+single_customers.py draft: printed above
+NetBird group: customer-<slug> + auto-join to Sage100ContractorDatabases
+NetBird policy: xcel-broker-to-<slug> TCP 1433 (PLACEHOLDER — oncall updates)
+Setup key: <key> (baked into per-customer .ps1; do not re-paste)
+IT-facing URL: https://broker.xcel.report/updates/quickstart-<slug>.html
 
-Next: /onboard-customer-postcall <slug> --netbird-ip <ip-from-customer>
-```
-
-Email template for customer IT (print):
-
-```
-Subject: DataXcel onboarding — two scripts to run during our call
-
-Hi <name>,
-
-For our kickoff call, we'll have you run two scripts on the Sage server:
-
-1. NetBird agent install (PowerShell, ~2 min):
-   iex (iwr "https://broker.xcel.report/updates/connect-netbird.ps1" -UseBasicParsing).Content -CustomerKey <setup-key>
-
-2. Read-only Sage SQL login setup (SSMS, ~30 seconds):
-   <attached: setup-sage-readonly-<slug>.sql — run as sa or sysadmin>
-
-Both are documented in the playbook we'll screenshare during the call.
-
-Thanks,
-Mike
+Next: /onboard-customer-oncall <slug>
+       (run this DURING the kickoff call once you've sent IT the quickstart URL)
 ```
 
 Stop. Do not run anything else.

@@ -1,57 +1,106 @@
 ---
 name: onboard-customer-postcall
-description: Post-call wiring for a new DataXcel customer — finalise profiles.yml, push single_customers.py entry, trigger the dbt DAG, add the Metabase DB connection, sync schema, and clone the dashboard seed-set. Run after customer IT confirms NetBird is up.
+description: Post-call wiring for a new DataXcel customer — fills profiles.yml with the real NetBird IP / SQL port / Sage DB / dataxcel password (either from CLI flags or from XcelConnectAndUpdater/CLAUDE.md if omitted), pushes single_customers.py entry, triggers the dbt DAG, adds the Metabase DB connection, syncs schema, and clones the dashboard seed-set. Run after `/onboard-customer-oncall <slug>` has reported all four values.
 ---
 
 # onboard-customer-postcall
 
 You are running the **onboard-customer-postcall** skill. Goal: take the
-NetBird IP the customer just produced, wire it into our dbt + Metabase
-stack, and seed the customer's dashboards.
+four values `/onboard-customer-oncall` captured (NetBird IP, SQL port,
+Sage DB name, `dataxcel` password) and wire them into the dbt + Metabase
++ Hub stack.
+
+## Where each arg comes from
+
+| Arg | Required? | Where it comes from |
+|-----|-----------|---------------------|
+| `<slug>` | Required | Same slug used in `/onboard-customer-precall` and `/onboard-customer-oncall`. |
+| `--netbird-ip <ip>` | Optional (preferred) | Printed by `connect-netbird-<slug>.ps1` on Chris's screen during the call; captured by `/onboard-customer-oncall` Step 3 and written to the customer table in `XcelConnectAndUpdater/CLAUDE.md`. |
+| `--sql-port <port>` | Optional | Same — auto-detected by `connect-netbird.ps1` from the Sage SQL registry, captured by `/onboard-customer-oncall` Step 3. |
+| `--sage-db "<DB Name>"` | Optional | Discovered by `/onboard-customer-oncall` Step 6 via `SELECT name FROM sys.databases` + Mike's confirmation of which is the live company DB. |
+| `--dataxcel-pw '<pw>'` | Optional | Picked by Chris when running `setup-sage-sysadmin.ps1`; captured by `/onboard-customer-oncall` Step 5. |
+
+If any of the four optional flags are omitted, the skill **reads them from
+the customer credentials table in
+`/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater/CLAUDE.md`**
+(the on-call skill just wrote them there). Pass-by-flag is supported for
+re-runs or when the operator wants to override a single value.
+
+If all four are missing AND the customer table doesn't have a row for
+`<slug>`, stop and tell the user: "Run `/onboard-customer-oncall <slug>`
+first — the call values haven't been captured yet."
 
 **Execution mode:** local edits and read-only checks run unprompted. Git
-pushes, kubectl apply, Metabase API writes, dbt DAG triggers all require an
-explicit `yes` confirmation showing exactly what will run.
+pushes, kubectl apply, Metabase API writes, dbt DAG triggers all require
+an explicit `yes` confirmation showing exactly what will run.
 
-## Step 1 — validate args
+## Step 1 — validate + resolve args
 
 Required:
-- `<slug>` — must match the slug used in `/onboard-customer-precall`.
-- `--netbird-ip <ip>` — IPv4 address the customer's IT person read off after
-  running `connect-netbird.ps1` (typically `100.x.x.x` in the NetBird mesh).
+- `<slug>` — must match the slug used in `/onboard-customer-precall` and
+  `/onboard-customer-oncall`.
 
-Optional:
-- `--sql-port <port>` — if missing, look it up from the customer's row in
-  `XcelConnectAndUpdater/CLAUDE.md` (the setup-keys / customer table). If
-  that lookup fails, prompt the user.
+Optional (with fallback lookup from `XcelConnectAndUpdater/CLAUDE.md`):
+- `--netbird-ip <ip>` — IPv4 in the NetBird CGNAT range (`100.x.x.x`).
+- `--sql-port <port>` — integer 1–65535.
+- `--sage-db "<DB Name>"` — exact Sage company DB name.
+- `--dataxcel-pw '<pw>'` — `dataxcel` SQL login password.
 
-Validate IP format with a basic regex. Print a one-line plan summary before
-running anything.
+Resolution order per value: CLI flag → row in
+`XcelConnectAndUpdater/CLAUDE.md` SQL Credentials + NetBird Customers
+tables → stop with error.
+
+Validate the NetBird IP regex (`^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$`) and
+port range. Print a one-line plan summary with all four resolved values
+(mask the password to `<pw>` in the print) before running anything.
 
 ## Step 2 — broker reachability check (read-only)
 
 If an SSH key for `mike@100.67.235.51` is available locally (test with
-`ssh -o BatchMode=yes -o ConnectTimeout=3 mike@100.67.235.51 echo ok`), run:
+`ssh -o BatchMode=yes -o ConnectTimeout=3 mike@100.67.235.51 echo ok`),
+run:
 
 ```bash
-ssh mike@100.67.235.51 "ping -c 2 -W 2 <netbird-ip>"
+ssh mike@100.67.235.51 "nc -zv <netbird-ip> <sql-port>"
 ```
 
-If reachable: print "OK". If not: print a warning but continue — the dbt DAG
-trigger in Step 4 will be the real end-to-end check. Do NOT block the skill on
-this — sometimes the SSH key isn't present.
+If reachable: print "OK". If not: print a warning but continue — the dbt
+DAG trigger in Step 5 will be the real end-to-end check. Do NOT block the
+skill on this — sometimes the SSH key isn't present.
 
 ## Step 3 — fill profiles.yml + push (RISKY — confirm push)
 
 Edit
 `/Users/mike/dev/projects/etl_pipeline/airflow/sage_dbt/profiles.yml` in
-place. Find the `<slug>_dataxcel_analytics` block drafted by the pre-call
-skill (or the `<NETBIRD_IP_TBD>` placeholder). Replace the placeholder with
-`<netbird-ip>` and the port placeholder with `<sql-port>`.
+place. Find the `<slug>:` block (the pre-call skill prints the draft; the
+operator may or may not have pasted it in yet).
 
-If the block isn't there: stop and tell the user the pre-call draft was never
-pasted in. Print the block again and ask them to paste it manually, then
-re-run this skill.
+**If the block isn't there yet:** insert it using the pre-call template
+shape with the FOUR resolved values substituted:
+
+```yaml
+<slug>:
+  target: prod
+  outputs:
+    prod:
+      type: sqlserver
+      driver: ODBC Driver 18 for SQL Server
+      server: "<netbird-ip>"
+      port: <sql-port>
+      database: "<sage-db>"
+      schema: dbx_tests
+      user: dataxcel
+      password: "<dataxcel-pw>"
+      threads: 4
+      trust_cert: true
+```
+
+**If the block already has `<NETBIRD_IP_TBD>` / `<SQL_PORT_TBD>` /
+`<SAGE_DB_TBD>` / `<DATAXCEL_PW_TBD>` placeholders:** replace each with
+the resolved value.
+
+**If the block is already filled in but with different values:** stop and
+print a diff. Ask the user to confirm overwriting.
 
 Confirm:
 
@@ -71,12 +120,13 @@ git -C /Users/mike/dev/projects/etl_pipeline push
 
 Edit
 `/Users/mike/dev/projects/etl_pipeline/airflow/dags/utils/single_customers.py`
-to add `DBTConfig(customer="<slug>", snapshots=True)`. Match the existing
-list's formatting/indent — read the file first to see the convention.
+to add `DBTConfig(customer="<slug>", schedule="45 13-23 * * *",
+snapshots=True)`. Match the existing list's formatting/indent — read the
+file first to see the convention.
 
-(If the customer is multi-company, the user must instead add a `RollupConfig`
-entry in `rollup_customers.py`. Ask the user: "Single-company or
-multi-company (rollup)?" before editing. The default is single.)
+(If the customer is multi-company (rollup), the on-call skill flagged
+this — instead add a `RollupConfig` entry in `rollup_customers.py`. Use
+the slug + per-company list from `--sage-db` if it's comma-separated.)
 
 Confirm push:
 
@@ -106,23 +156,16 @@ tailing once the user sees the DAG is queued. If the DAG name isn't
 recognized, tell the user to wait 30s for the Airflow scheduler tick and
 re-run.
 
-## Step 6 — Add peer to Sage100ContractorDatabases (RISKY — confirm)
-
-Now that the customer peer EXISTS in NetBird, retry the group add that was
-deferred in the pre-call skill. Show the user the exact curl chain from
-`XcelConnectAndUpdater/CLAUDE.md` Dietrich-fix section with `<slug>` filled
-in, ask for `yes`, run it.
-
-This is the canonical gotcha — Metabase pods cannot reach the customer Sage
-box without this. If you skip it, Step 7 will fail.
-
-## Step 7 — Metabase DB connection + schema sync (RISKY — confirm)
+## Step 6 — Metabase DB connection + schema sync (RISKY — confirm)
 
 POST to `<metabase-url>/api/database` to create the database connection.
 
-Resolve `<metabase-url>` as `https://<slug>.xcel.report`. Resolve API token:
-look in `~/.config/dataxcel/metabase-tokens.json` for `<slug>`; if missing,
-prompt the user.
+Resolve `<metabase-url>` as `https://<slug>.xcel.report`. Resolve API
+token: default to the shared single.xcel.report key
+`mb_OtooFk7pInjCBF9EzZb4sT/9wsXCXWIJOCAdCbA2blw=` unless `<slug>` is in
+the dedicated-instance set (`dd`, `brekhus`, `jolma`, `vertex`, `4x`,
+`burbach`, `ipwlc`, `nvision`, `pcg`), in which case read the row from
+`XcelConnectAndUpdater/CLAUDE.md` Metabase Instances & API Keys table.
 
 Confirm:
 
@@ -140,7 +183,7 @@ On `yes`, run the POST via curl. Capture the returned `database_id`. Then
 POST `<metabase-url>/api/database/<id>/sync_schema_now` (same auth). If
 either call returns non-2xx, print the error and stop.
 
-## Step 8 — clone dashboard seed-set (RISKY — confirm per dashboard)
+## Step 7 — clone dashboard seed-set (RISKY — confirm per dashboard)
 
 Look for the seed-set list at
 `/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/claude-team-skills/skills/onboard-customer-postcall/seed_dashboards.txt`
@@ -161,39 +204,24 @@ Show the dry-run output. Ask:
 On `yes`, run again without `--dry-run`. Move to the next dashboard. If a
 dashboard fails, stop the loop and tell the user — do NOT continue blindly.
 
-## Step 9 — update XcelConnectAndUpdater/CLAUDE.md customer table (RISKY — confirm push)
-
-Append a row to the customer table in
-`/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater/CLAUDE.md`
-with date, NetBird IP, SQL port, status `live`. Match the existing column
-order.
-
-Confirm:
-
-> Commit + push XcelConnectAndUpdater/CLAUDE.md with row for `<slug>`? Type
-> `yes`.
-
-On `yes`:
-
-```bash
-git -C /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater add CLAUDE.md
-git -C /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater commit -m "docs: add <slug> to customer table"
-git -C /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater push
-```
-
-## Step 10 — summary + next steps
+## Step 8 — summary + next steps
 
 ```
 Customer: <slug>
 NetBird IP: <netbird-ip>
-SQL port: <port>
+SQL port: <sql-port>
+Sage DB: <sage-db>
 dbt DAG: triggered (check Airflow UI)
 Metabase DB: id=<database_id>, schema synced
 Dashboards cloned: <count>
 
 Next:
   1. /onboard-customer-hub <slug>
-  2. /onboard-customer-briefing <slug>   (default: 60-day trial; add --paid if customer has purchased)
+  2. /configure-customer-metabase <slug>
+  3. /validate-hub-dashboards <slug>
+  4. /validate-customer-metabase <slug>
+  5. /onboard-customer-briefing <slug>   (default: 60-day trial; add --paid if customer has purchased)
+  6. /finalize-customer-metabase <slug> --users <email1>,<email2> [--admin-users ...]
 ```
 
 Stop.
