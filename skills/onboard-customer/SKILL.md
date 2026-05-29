@@ -31,14 +31,14 @@ PLAYBOOK="/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConn
 
 ## Step 2 — ask which phase
 
-Ask the user (one question, four choices):
+Ask the user (one question, five choices):
 
 > Which phase are you in?
 >   1. **pre-call** — just got the customer; nothing provisioned yet
 >   2. **post-call** — customer IT ran connect-netbird.ps1 and the SQL script; you have the NetBird IP
->   3. **hub** — Metabase + dbt are live; ready to install the Dashboard Hub menu (the default — every new customer gets this)
->   4. **snapshots** — toggling dbt snapshots on/off for an existing customer
->   5. **briefing (paid add-on)** — customer has *purchased* the CEO AI Briefing; provision the YAML + iframe. **Do not pick this for a default new-customer onboarding.**
+>   3. **hub** — Metabase + dbt are live; ready to install the Dashboard Hub menu (default for every new customer)
+>   4. **briefing** — provision the CEO AI Briefing (default for every new customer; 60-day trial countdown built in; pass `--paid` if the customer has purchased outright)
+>   5. **snapshots** — toggling dbt snapshots on/off for an existing customer
 
 ## Step 3 — route
 
@@ -51,12 +51,16 @@ runs it themselves so they can review args first.
 | pre-call | `/onboard-customer-precall <slug> --sql-port <port> --sage-dbs <CompanyA,CompanyB>` |
 | post-call | `/onboard-customer-postcall <slug> --netbird-ip <ip>` |
 | hub | `/onboard-customer-hub <slug> --company "<name>" --metabase-url <url> --metabase-api-key <key>` |
+| briefing | `/onboard-customer-briefing <slug>` (trial mode, 60-day default) — add `--paid` for a paid customer, or `--trial-days N` to override the default |
 | snapshots | `/customer-snapshots <slug>` (add `--off` to disable) |
-| briefing (paid add-on) | `/onboard-customer-briefing <slug>` — only run when the customer has purchased the CEO AI Briefing. Skip otherwise. |
 
-Also remind the user of the **default** canonical sequence: pre-call → on-call
-→ post-call → **hub**. The CEO AI Briefing is a paid add-on and is NOT part of
-the default flow — only provision it when the customer has bought it.
+Also remind the user of the **default** canonical sequence:
+
+> 1. pre-call
+> 2. on-call (customer IT runs `connect-netbird.ps1` + `setup-sage-readonly-<slug>.sql`)
+> 3. post-call
+> 4. hub
+> 5. briefing (default; 60-day trial built in — pass `--paid` only for paid customers)
 
 ## Step 4 — finish
 
