@@ -189,15 +189,57 @@ For each kept dashboard:
 2. For each `(card_id, card_name)`:
    - `POST <metabase-url>/api/card/<card_id>/query` with empty JSON body
      and `--timeout` seconds.
-   - Classify the result:
-     - **failed** — HTTP error, timeout, or response JSON has a
-       non-null `error` field.
-     - **empty** — response succeeded but `data.rows` is empty
-       (this is a WARN, not a hard fail — some dashboards legitimately
-       show zero rows for a fresh customer).
-     - **success** — response has rows.
+   - Classify the result using the **five rules below** (corrected
+     during Lunstrum onboarding, 2026-05-29 — the naive
+     "HTTP 200 + non-empty = pass" classifier produced hundreds of
+     false positives on the shared `single.xcel.report` cluster):
+
+     1. **2xx-as-success, not just 200.** Metabase v0.61.x returns
+        **HTTP 202** for completed query responses on the shared
+        `single.xcel.report` cluster (and any cloned instance).
+        Classify `200 <= status < 300` as success. Treating 202 as
+        failure is the single biggest source of false-positive
+        failures on this stack.
+     2. **Required-parameters errors are NOT failures.** Cards with
+        required date filters return a 4xx with body
+        `{"error": "Cannot run the query: missing required parameters: #{end_date start_date}"}`.
+        The user supplies these via the dashboard's filter widget at
+        view time — they're not the validator's job. Classify as
+        **`params`** (interactive), not `fail`.
+     3. **`__mbarchiv__` tables are NOT failures.** Per
+        `feedback_ignore_mbarchiv`: tables with the `__mbarchiv__`
+        suffix are deliberately archived. Cards hitting them surface
+        an "inactive table" error. Classify as **`archived`**, not
+        `fail`.
+     4. **Empties are warnings, not failures.** `data.rows` empty +
+        2xx = **`empty`** (WARN). Fresh customers legitimately have
+        many zero-row cards (no AR aging > 90 days, no historical
+        cash positions yet).
+     5. **`failed`** = any other non-2xx response (excluding the
+        params/archived cases), timeout, or response JSON with a
+        non-null `error` field that doesn't match rules 2 or 3.
+
    - Track `running_time` from the response for the avg/max per-dashboard
      query time.
+
+### Resolution rule — archive when the data isn't there
+
+When a card fails because the customer doesn't have the data the
+dashboard expects (no BigQuery Sheets sync → database_id=8 missing,
+references to `dataxcel_analytics` views the customer's warehouse
+doesn't have, missing Sage modules), the fix is to **archive the
+entire dashboard**:
+
+```
+PUT <metabase-url>/api/dashboard/<dashboard-id> {"archived": true}
+```
+
+Mike's exact words (2026-05-29): *"no real fix is archive reports if
+we dont have the data to fix them."* Chasing fixes for data the
+customer doesn't have is wasted work; the Hub will stop surfacing the
+dashboard on the next sync. This is the resolution for the
+`[NO-DATA]` cluster, distinct from the Hallowell stale-field-id
+cluster (which still gets fixed via `pmbql_migrate.py`).
 
 Parallelise per dashboard (up to 5 concurrent card executions matching
 the production function's `ThreadPoolExecutor(max_workers=5)`). Across
@@ -234,15 +276,15 @@ After every dashboard has been checked, print a sticky table:
   Hub dashboard health for <slug>
 ========================================
 
-| Dashboard                       | Cards | Pass | Empty | Fail |
-|---------------------------------|-------|------|-------|------|
-| Income Statement                |    14 |   14 |     0 |    0 |
-| Balance Sheet                   |     8 |    8 |     0 |    0 |
-| Job Cost Detail                 |    22 |   19 |     2 |    1 |
-| WIP / Over-Under Billings       |     6 |    6 |     0 |    0 |
-| ...                             |   ... |  ... |   ... |  ... |
-|---------------------------------|-------|------|-------|------|
-| TOTAL                           |   412 |  408 |     3 |    1 |
+| Dashboard                       | Cards | Pass | Empty | Params | Archived | Fail |
+|---------------------------------|-------|------|-------|--------|----------|------|
+| Income Statement                |    14 |   14 |     0 |      0 |        0 |    0 |
+| Balance Sheet                   |     8 |    8 |     0 |      0 |        0 |    0 |
+| Job Cost Detail                 |    22 |   19 |     2 |      0 |        0 |    1 |
+| Cash Position History           |     6 |    0 |     0 |      6 |        0 |    0 |
+| ...                             |   ... |  ... |   ... |    ... |      ... |  ... |
+|---------------------------------|-------|------|-------|--------|----------|------|
+| TOTAL                           |   564 |  371 |    36 |     18 |        3 |    0 |
 
 Excluded by Hub rules: 9 dashboards
   Automatically Generated Dashboards (collection)
@@ -406,6 +448,26 @@ These are deferred work this skill assumes will exist later:
   `check_dashboard_health` as an HTTPS-callable, replace path A's manual
   `gcloud scheduler jobs run` with a direct invocation and the Firestore
   read.
+
+## Worked example — Lunstrum (2026-05-29)
+
+The corrections in this SKILL.md come from the live Lunstrum onboarding
+run. After applying the five classifier rules and archiving 7 broken
+dashboards whose data the customer didn't have:
+
+- **78 dashboards** surfaced (after archiving 7 via
+  `PUT /api/dashboard/<id> {"archived": true}`)
+- **564 cards** executed
+- **371 pass**
+- **36 empty** (warn) — fresh-customer zero rows
+- **18 params** (interactive — date filter required)
+- **3 archived** (`__mbarchiv__` tables)
+- **0 real failures** — PASS
+
+Before the corrections the same run reported hundreds of "failures"
+that were actually 202 responses, interactive date filters, or
+deliberately-archived tables. The classifier rules above turn that
+noise into clean signal.
 
 ## Quick recap of the gate
 

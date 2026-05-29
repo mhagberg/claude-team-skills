@@ -24,6 +24,34 @@ Mike's hard rule (2026-05-29 during Lunstrum onboarding):
 Your job: run **every available** Metabase-vs-Sage validator for this
 customer and refuse to print the "Next:" pointer unless all of them pass.
 
+**Source of truth — read this first.** The canonical Balance Sheet
+validator procedure lives in
+[`metabase-migration/report-repair/CLAUDE.md`](../../../metabase-migration/report-repair/CLAUDE.md)
+(see "Balance Sheet Troubleshooting" section). That document is the
+authoritative description of how `balance_sheet_balance` is computed in
+the dbt mart, how to diagnose a NULL `prior_fys_profit_loss`, and how
+to repair the Metabase custom column expression. This skill is a
+thin wrapper that **runs that procedure** — it does not duplicate it.
+
+**This is NOT an Excel-vs-Metabase comparison by default.** Sage 100
+Contractor does not store the Balance Sheet as a query-able report,
+so there is no Sage export to diff against directly. Instead the
+validator runs SQL **directly against the customer's
+`dataxcel_analytics` warehouse** and against the raw Sage SQL Server
+source DB on the customer's box, then diffs the two. Customer Excel
+exports exist but are hypotheses, not ground truth — see the
+`feedback_sage_is_truth` rule. Excel comparison is a fallback the
+user can request explicitly via `--use-excel`; the default path is
+SQL-only.
+
+**Point-in-time, not sum-of-months.** A Balance Sheet is a snapshot
+— filter to ONE as-of date. The Metabase card is designed to be
+filtered by the dashboard's date param at view time;
+**unfiltered it sums all months and produces garbage**. The
+validator MUST apply a date filter (latest period with data) before
+summing. Use `--end-date` (defaults to the latest available
+`balance_budget_date` in `Ledger_Accounts_by_Month`).
+
 **Execution mode:** every validator in this skill is read-only against
 Metabase and read-only against the Sage 100 DW. Run them unprompted. The
 only write this skill ever performs is a summary markdown to `/tmp` — and
@@ -82,10 +110,10 @@ exit non-zero. Do NOT silently skip.
 
 | Report key | Validator | Location |
 |------------|-----------|----------|
-| `balance`  | Balance Sheet Excel vs Metabase card | `metabase-migration/metabase-validation/validate.py --report "Balance Sheet"` |
-| `income`   | Income Statement Excel vs Metabase card + Cash Basis pytest suite | `metabase-migration/metabase-validation/validate.py --report "Income Statement"` AND `cash-basis-report/tests/` |
-| `ar_aging` | AR Invoice Aging Excel vs Metabase card | `metabase-migration/metabase-validation/validate.py --report "AR Invoice Aging"` |
-| `ap_aging` | AP Invoice Aging Excel vs Metabase card | `metabase-migration/metabase-validation/validate.py --report "AP Invoice Aging"` |
+| `balance`  | Balance Sheet diagnostic-SQL procedure (3 queries — accounting identity, RE / `prior_fys_profit_loss`, account coverage) run against `dataxcel_analytics` + raw Sage source DB | `metabase-migration/report-repair/CLAUDE.md` ("Balance Sheet Troubleshooting" section) — see Step 4a below for the exact SQL |
+| `income`   | Cash Basis pytest suite (51 tests, Cash Basis Income Statement) | `cash-basis-report/tests/` |
+| `ar_aging` | AR Invoice Aging Excel vs Metabase card (Excel fallback only — requires `--use-excel`) | `metabase-migration/metabase-validation/validate.py --report "AR Invoice Aging"` |
+| `ap_aging` | AP Invoice Aging Excel vs Metabase card (Excel fallback only — requires `--use-excel`) | `metabase-migration/metabase-validation/validate.py --report "AP Invoice Aging"` |
 | `posting_date` | Filter coverage scan (45 unit tests + per-instance scan) | `ais-posting-date-filters/tests/` and `ais-posting-date-filters/scripts/validate_filter.py` |
 | `wip`      | NOT YET IMPLEMENTED — see TODOs at the bottom |
 | `jobcost`  | NOT YET IMPLEMENTED — see TODOs at the bottom |
@@ -100,28 +128,22 @@ This validator needs to be built before we can gate <slug> on it.
 
 …and refuse to proceed. Do not pretend a missing validator passed.
 
-## Step 3 — collect Sage Excel exports (for Excel-based validators)
+## Step 3 — Excel exports are a FALLBACK, not the default
 
-The `metabase-migration/metabase-validation/validate.py` script compares a
-Metabase card against a **Sage Excel export** the user produced from Sage
-100 Contractor. Ask the user up front:
+The default validator path for `balance` is **SQL-only** — it runs the
+diagnostic SQL in Step 4a directly against the customer's
+`dataxcel_analytics` warehouse and the raw Sage source DB. Do NOT ask
+the user for an Excel export by default.
 
-> Validating `balance`, `income`, `ar_aging`, `ap_aging` requires Sage
-> Excel exports. Do you have them locally? (yes / skip-excel-validators)
->
-> If yes, the `validate.py` GUI file-picker will open per report.
+Only collect an Excel export if the user explicitly passes
+`--use-excel` (e.g. they want a third-party cross-check) or if a
+specific validator only exists as an Excel diff (currently `ar_aging`
+and `ap_aging`). In those cases the `validate.py` GUI file-picker
+opens per report — pass the path through; do not re-prompt.
 
-If the user types `skip-excel-validators`, fall back to **API-only**
-comparison for `balance` / `income`: pull the equivalent T-SQL directly
-from the corresponding dbt mart in
-`/Users/mike/dev/projects/etl_pipeline/airflow/sage_dbt/dataXcel/models/mart/`
-and compare its result rows to the Metabase card. Use Sage 100 as the
-ground truth (memory: `Sage Is The Truth` — Sage DB is truth, treat
-customer Excel files as hypotheses, not ground truth).
-
-Mark Excel-skipped validators in the final report as
-`mode=api-only (no Excel cross-check)` so Mike knows the depth of what was
-verified.
+Mark the run in the final report with `mode=sql-diagnostic` (default)
+or `mode=excel-cross-check` (when `--use-excel` was passed) so Mike
+knows the depth of what was verified.
 
 ## Step 4 — run validators (read-only, parallel where independent)
 
@@ -130,7 +152,70 @@ Run each requested validator. Independent validators can run in parallel
 `ais-posting-date-filters` pytest are all independent processes). Stream
 output to the console as it arrives.
 
-### 4a. Cash Basis Income Statement pytest suite (for `income`)
+### 4a. Balance Sheet diagnostic SQL (for `balance`) — default path
+
+Run all three queries against the customer's `dataxcel_analytics` SQL
+Server. Use the connection from the customer's `profiles.yml` block
+(see `XcelConnectAndUpdater/CLAUDE.md` "SQL Credentials" table) — the
+same credentials dbt uses. Apply the `--end-date` filter; never sum
+unfiltered (Balance Sheet is a point-in-time snapshot).
+
+**Test 1 — accounting identity per period.** `Assets = Liabilities +
+Equity` must hold to within `--tolerance` ($0.01 default) for every
+period:
+
+```sql
+SELECT
+  balance_budget_date,
+  SUM(CASE WHEN balance_sheet_asset_type = '1. Total Assets'      THEN balance_sheet_balance ELSE 0 END) AS assets,
+  SUM(CASE WHEN balance_sheet_asset_type = '2. Total Liabilities' THEN balance_sheet_balance ELSE 0 END) AS liabilities,
+  SUM(CASE WHEN balance_sheet_asset_type = '3. Equity'            THEN balance_sheet_balance ELSE 0 END) AS equity
+FROM dbo.Ledger_Accounts_by_Month
+GROUP BY balance_budget_date
+ORDER BY balance_budget_date;
+```
+
+Fail if any period has `|assets - (liabilities + equity)| > tolerance`.
+
+**Test 2 — Retained Earnings + `prior_fys_profit_loss`.** Flag if
+`prior_fys_profit_loss` is NULL but `balance_sheet_balance` differs
+from raw `balance` — the dbt `year_to_calculate_from` subquery may
+have found no match (floating-point precision bug or genuinely no
+closed prior years):
+
+```sql
+SELECT fiscal_year, balance_budget_date, ledger_account,
+       balance, prior_fys_profit_loss, balance_sheet_balance
+FROM dbo.Ledger_Accounts_by_Month
+WHERE ledger_account LIKE '%Retained Earn%'
+ORDER BY balance_budget_date DESC;
+```
+
+For fresh-customer / synthetic-data instances this is an **advisory
+flag, not a block** — Sage hasn't closed any years yet so NULL is
+expected. For an established customer that's been live for >1
+fiscal year, it's a real failure — investigate via the `report-repair`
+playbook before unblocking.
+
+**Test 3 — account coverage.** NULL `asset_type` accounts mean the
+categorization CASE in `Ledger_Accounts_by_Month.sql` missed them:
+
+```sql
+SELECT
+  COUNT(DISTINCT ledger_account_id)                                                AS total_accounts,
+  COUNT(DISTINCT CASE WHEN balance_sheet_asset_type IS NULL THEN ledger_account_id END) AS uncategorized_accounts
+FROM dbo.Ledger_Accounts_by_Month;
+```
+
+Fail if `uncategorized_accounts > 0`.
+
+For full troubleshooting (PCG Balance Sheet custom column expressions,
+how `balance_sheet_balance` is computed, NULL `prior_fys_profit_loss`
+diagnosis, VGW well-behaved-client case study), defer to
+`metabase-migration/report-repair/CLAUDE.md` "Balance Sheet
+Troubleshooting" — it's the source of truth.
+
+### 4b. Cash Basis Income Statement pytest suite (for `income`)
 
 ```bash
 cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/cash-basis-report
@@ -155,7 +240,7 @@ Notes:
   has unknown GL sources). Treat `passed + skipped == total` with `failed
   == 0` as a pass. Any `failed > 0` is a hard fail.
 
-### 4b. metabase-validation Excel comparison (for `balance` / `income` / `ar_aging` / `ap_aging`)
+### 4c. metabase-validation Excel comparison (FALLBACK only — `ar_aging` / `ap_aging` always; `balance` / `income` only with `--use-excel`)
 
 For each report the user has Excel for:
 
@@ -179,7 +264,7 @@ API (`GET /api/dashboard/<id>` and inspect dashcards). If the user knows
 the card IDs, accept them as additional `--income-card`, `--balance-card`
 flags; otherwise interactively prompt per report.
 
-### 4c. posting_date filter validation (for `posting_date`)
+### 4d. posting_date filter validation (for `posting_date`)
 
 ```bash
 cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/ais-posting-date-filters
@@ -192,7 +277,7 @@ The pytest suite is instance-agnostic (it tests payload construction). The
 instance have `posting_date` wired vs missing — useful as a coverage
 signal even if it's not strictly a number-validates-vs-Sage check.
 
-### 4d. API-only Sage cross-check (fallback when Excel is unavailable)
+### 4e. API-only Sage cross-check (only used when `--use-excel` was passed AND the user has no Excel file)
 
 For each report where the user said `skip-excel-validators`:
 
@@ -337,6 +422,28 @@ Until then: requesting `--reports all` will yield `BLOCKED` for `wip` and
 `jobcost`, which is the correct behavior — Mike's rule is
 "validate before we add users", and we can't claim WIP is validated when
 we have no WIP validator.
+
+## Worked example — Lunstrum (2026-05-29)
+
+Live run that informed every correction in this SKILL.md:
+
+- **Test 1 (accounting identity):** green for **14 periods**
+  (2025-11 through 2026-12) — `|assets - (liabilities + equity)| <
+  $0.01` for every period.
+- **Test 2 (RE / `prior_fys_profit_loss`):** `prior_fys_profit_loss
+  = NULL` for the Retained Earnings rows — flagged as **advisory
+  only** because Lunstrum is fresh synthetic data with no real prior
+  years closed. NOT a block. For an established customer this would
+  be a real failure.
+- **Test 3 (account coverage):** **335 ledger accounts, 0 with NULL
+  `asset_type`** — categorization CASE in
+  `Ledger_Accounts_by_Month.sql` covers every account.
+- **Validator result:** PASS (advisory flag recorded in the
+  summary).
+
+Mike's exact instruction (during this run): *"we need to make sure
+the numbers validate against the Sage reports before we add the users
+and give them access."*
 
 ## Quick recap of the gate
 
