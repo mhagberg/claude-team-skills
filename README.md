@@ -14,6 +14,8 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fill `profiles.yml` with the NetBird IP, push `single_customers.py`, trigger the dbt DAG, add Metabase DB + schema sync, clone the dashboard seed-set. |
 | `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
 | `/onboard-customer-briefing <slug>` | **Paid add-on only** — provision the CEO AI Briefing for a customer who has purchased it. Do NOT run by default. |
+| `/validate-customer-metabase <slug>` | **Gate before users get access.** Runs every available Metabase-vs-Sage validator (Balance Sheet, Income Statement / Cash Basis 51-test pytest, AR/AP Aging, `posting_date` filter coverage) within `--tolerance`. Read-only. **Refuses to print a `Next:` pointer if any validator fails** — Mike's hard rule (2026-05-29): "we need to make sure the numbers validate against the Sage reports before we add the users and give them access." Must pass before `/finalize-customer-metabase`. |
+| `/finalize-customer-metabase <slug> --users <emails>` | **LAST step before go-live.** Adds customer users (regular + `--admin-users`), verifies Base URL + timezone, deletes any non-team users left over from cloning the demo instance. Uses the shared `single.xcel.report` API key by default. |
 | `/customer-snapshots <slug>` | Flip dbt snapshots on/off for an existing customer in `single_customers.py` (or `rollup_customers.py`). Add `--off` to disable. |
 
 See [`CLAUDE.md`](./CLAUDE.md) for the design spec.
@@ -36,7 +38,27 @@ underlying process is the HTML playbook at
    `/onboard-customer-postcall <slug> --netbird-ip <ip>`
 4. **Provision the hub** (the default dashboard menu — iframed into their Metabase):
    `/onboard-customer-hub <slug> --company "<name>" --metabase-url https://<slug>.xcel.report --metabase-api-key <key>`
-5. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
+5. **Validate the Metabase numbers against Sage** (read-only — no writes):
+   `/validate-customer-metabase <slug> [--reports balance,income,wip,jobcost] [--tolerance 0.01]`
+   Runs every available Metabase-vs-Sage validator: Balance Sheet vs Sage
+   Excel, Income Statement vs Sage Excel, the `cash-basis-report` 51-test
+   pytest suite, AR/AP Aging vs Sage exports, and `posting_date` filter
+   coverage. **Hard gate — Mike's rule (2026-05-29):** "we need to make
+   sure the numbers validate against the Sage reports before we add the
+   users and give them access." If any validator fails, the skill refuses
+   to print a `Next:` pointer and exits non-zero. **Do NOT run
+   `/finalize-customer-metabase` until validation is green** — fix the
+   underlying dbt/dashboard/Sage mismatch first and re-run.
+6. **Finalize (LAST step before go-live)** — add the customer's users,
+   verify Base URL + timezone, prune any non-team users carried over from
+   the demo clone:
+   `/finalize-customer-metabase <slug> --users <user1@co,user2@co> [--admin-users <admin@co>] [--timezone America/Boise]`
+   Uses the shared `single.xcel.report` API key by default; customers with
+   dedicated instances pull their key from the
+   `XcelConnectAndUpdater/CLAUDE.md` table automatically.
+7. **Optional paid add-on — CEO AI Briefing:** `/onboard-customer-briefing <slug>`
+   (only if the customer has purchased it — see the "Paid add-on" section below).
+8. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
    (pre-call already defaults new customers to `snapshots=True`; only use this
    to flip an existing customer).
 
