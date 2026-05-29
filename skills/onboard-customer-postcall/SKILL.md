@@ -160,9 +160,20 @@ tailing once the user sees the DAG is queued. If the DAG name isn't
 recognized, tell the user to wait 30s for the Airflow scheduler tick and
 re-run.
 
-## Step 6 — Metabase DB connection + schema sync (RISKY — confirm)
+## Step 6 — Metabase DB connection: UPDATE existing id=2 (RISKY — confirm)
 
-POST to `<metabase-url>/api/database` to create the database connection.
+> **CRITICAL.** A freshly-cloned tenant via `duplicate_single.sh` already
+> has a database row at id=2 — it carries over from the demo and still
+> points at the demo's warehouse (for `single.xcel.report` clones that's
+> Vertex Coatings' anonymized SQL Server at `100.67.89.249:50285`, user
+> `jobxcel`, db `Vertex Coatings Anonymize Reporting`). Renaming in the
+> Metabase admin UI does NOT fix this — the connection details must be
+> updated via the REST API. Until that happens, every dashboard, every
+> validation, every "Sage vs Metabase" comparison runs against the wrong
+> warehouse.
+>
+> This step UPDATES that existing id=2 row. The configure-customer-metabase
+> skill re-verifies the same connection later as Step 0 — belt-and-suspenders.
 
 Resolve `<metabase-url>` as `https://<slug>.xcel.report`. Resolve API
 token: default to the shared single.xcel.report key
@@ -171,21 +182,104 @@ the dedicated-instance set (`dd`, `brekhus`, `jolma`, `vertex`, `4x`,
 `burbach`, `ipwlc`, `nvision`, `pcg`), in which case read the row from
 `XcelConnectAndUpdater/CLAUDE.md` Metabase Instances & API Keys table.
 
-Confirm:
+### 6.1 Read the current state (read-only)
 
-> POST to `<metabase-url>/api/database` with:
->   name: "Sage DW (<slug>)"
+```
+GET <metabase-url>/api/database/2
+```
+
+Three possible outcomes:
+
+1. **id=2 exists and points at the demo's host** (the common case for a
+   freshly-cloned tenant). Proceed to 6.2 — UPDATE.
+2. **id=2 exists and already points at the customer's NetBird IP +
+   dataxcel_analytics** (this skill was re-run). Skip 6.2, jump to 6.3 to
+   re-verify.
+3. **id=2 does NOT exist** (rare — only if a human manually deleted it).
+   Fall back to `POST <metabase-url>/api/database` with the same body
+   shape from 6.2, capture the returned id, and use that id everywhere
+   below (sync, smoke query).
+
+### 6.2 Update the connection (confirm)
+
+Confirm with the exact URL + body:
+
+> PUT to `<metabase-url>/api/database/2` with:
+>   name: "<Customer> Analytics"
 >   engine: sqlserver
->   host: <netbird-ip>
->   port: <sql-port>
->   db: dataxcel_analytics
->   user: dataxcel
+>   details.host: <netbird-ip>
+>   details.port: <sql-port>
+>   details.db: dataxcel_analytics
+>   details.user: dataxcel
+>   details.password: <dataxcel-pw>
+>   details.ssl: false
+>   details.trust-server-certificate: true
 >
 > Type `yes`.
 
-On `yes`, run the POST via curl. Capture the returned `database_id`. Then
-POST `<metabase-url>/api/database/<id>/sync_schema_now` (same auth). If
-either call returns non-2xx, print the error and stop.
+On `yes`:
+
+```
+PUT <metabase-url>/api/database/2
+Headers:
+  x-api-key: <api-key>
+  Content-Type: application/json
+Body:
+{
+  "name": "<Customer> Analytics",
+  "engine": "sqlserver",
+  "details": {
+    "host": "<netbird-ip>",
+    "port": <sql-port>,
+    "db": "dataxcel_analytics",
+    "user": "dataxcel",
+    "password": "<dataxcel-pw>",
+    "ssl": false,
+    "trust-server-certificate": true
+  }
+}
+```
+
+Then trigger the schema sync:
+
+```
+POST <metabase-url>/api/database/2/sync_schema
+```
+
+(Note: `/sync_schema`, not `/sync_schema_now` — Metabase v0.61+ uses the
+shorter path. Both 200 and 202 are success on this stack.)
+
+### 6.3 Verify with a fresh GET (REQUIRED — do NOT trust the PUT echo)
+
+Metabase echoes the PUT body back in the response even on edge-case
+persistence failures. The only honest check is a follow-up read:
+
+```
+GET <metabase-url>/api/database/2
+→ assert details.host == <netbird-ip>
+→ assert details.port == <sql-port>
+→ assert details.db == "dataxcel_analytics"
+→ assert details.user == "dataxcel"
+```
+
+Then a smoke query against a table that only exists in the customer's
+real warehouse:
+
+```
+POST <metabase-url>/api/dataset
+{"database":2,"type":"native","native":{"query":"SELECT TOP 1 ledger_account_id FROM dbo.Ledger_Accounts_by_Month"}}
+```
+
+Must return rows. If it errors with `Cannot open database 'Vertex
+Coatings Anonymize Reporting' requested by the login. The login failed.`
+(or any reference to the demo's DB name), the PUT didn't take — stop and
+tell the user. Do NOT continue to Step 7 until this smoke query succeeds.
+
+Print:
+
+```
+MB DB id=2 now points at <netbird-ip>:<sql-port>/dataxcel_analytics — smoke query OK.
+```
 
 ## Step 7 — clone dashboard seed-set (RISKY — confirm per dashboard)
 
