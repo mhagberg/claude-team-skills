@@ -192,8 +192,11 @@ Metabase DB: id=<database_id>, schema synced
 Dashboards cloned: <count>
 
 Next:
-  1. /onboard-customer-briefing <slug>
-  2. /onboard-customer-hub <slug>
+  /onboard-customer-hub <slug>
 ```
+
+(Do **not** auto-run `/onboard-customer-briefing` — the CEO AI Briefing is a
+paid add-on and is NOT part of the default new-customer flow. Only run it if
+the customer has purchased the Briefing.)
 
 Stop.

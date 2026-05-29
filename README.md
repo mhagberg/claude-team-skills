@@ -12,8 +12,8 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/onboard-customer` | Orchestrator — opens the HTML onboarding playbook and routes you to the right sub-skill for your current phase. |
 | `/onboard-customer-precall <slug>` | Pre-call staging (~30 min before the IT meeting): NetBird provision, per-customer Sage SQL script, EKS Metabase tenant, draft `profiles.yml` + `single_customers.py` entries. |
 | `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fill `profiles.yml` with the NetBird IP, push `single_customers.py`, trigger the dbt DAG, add Metabase DB + schema sync, clone the dashboard seed-set. |
-| `/onboard-customer-briefing <slug>` | Provision the CEO AI Briefing: copy `ais.yaml` template, enable, dry-run (`--skip-ai`), install the Metabase iframe. |
 | `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
+| `/onboard-customer-briefing <slug>` | **Paid add-on only** — provision the CEO AI Briefing for a customer who has purchased it. Do NOT run by default. |
 | `/customer-snapshots <slug>` | Flip dbt snapshots on/off for an existing customer in `single_customers.py` (or `rollup_customers.py`). Add `--off` to disable. |
 
 See [`CLAUDE.md`](./CLAUDE.md) for the design spec.
@@ -34,13 +34,35 @@ underlying process is the HTML playbook at
    reports.
 3. **Post-call** (Mike/Ty, ~15 min after the call):
    `/onboard-customer-postcall <slug> --netbird-ip <ip>`
-4. **Provision the briefing** (one-time; monthly DAG runs automatically thereafter):
-   `/onboard-customer-briefing <slug>`
-5. **Provision the hub:**
+4. **Provision the hub** (the default dashboard menu — iframed into their Metabase):
    `/onboard-customer-hub <slug> --company "<name>" --metabase-url https://<slug>.xcel.report --metabase-api-key <key>`
-6. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
+5. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
    (pre-call already defaults new customers to `snapshots=True`; only use this
    to flip an existing customer).
+
+### Paid add-on: CEO AI Briefing
+
+**Do not provision by default.** The CEO AI Briefing is a separate paid product —
+the monthly PDF, the Claude narrative, the `board.xcel.report` iframe on the
+customer's Metabase. New customers get the Dashboard Hub iframe only; the
+Briefing iframe is **not** installed unless the customer has purchased the
+add-on.
+
+When a customer buys the Briefing:
+
+```
+/onboard-customer-briefing <slug>
+```
+
+That skill copies `customers/<slug>.yaml` from the AIS template, sets
+`enabled: true` (which triggers the Airflow DAG factory to start generating
+their monthly report on the 1st), and installs the `board.xcel.report` iframe
+on their Metabase home dashboard above the existing Hub iframe.
+
+Customers without `enabled: true` in their `customers/<slug>.yaml` get **no**
+briefing DAG and **no** briefing iframe — the factory and installer both skip
+them. This is the safety mechanism: an existing customer cannot accidentally
+end up with a Briefing they did not pay for.
 
 All onboarding skills **execute commands directly** and ask for an explicit
 `yes` confirmation only on **risky** steps (writes to remote Git, kubectl
