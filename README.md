@@ -13,6 +13,7 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/onboard-customer-precall <slug>` | Pre-call staging (~30 min before the IT meeting): NetBird provision, per-customer Sage SQL script, EKS Metabase tenant, draft `profiles.yml` + `single_customers.py` entries. |
 | `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fill `profiles.yml` with the NetBird IP, push `single_customers.py`, trigger the dbt DAG, add Metabase DB + schema sync, clone the dashboard seed-set. |
 | `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
+| `/validate-hub-dashboards <slug>` | **Gate AFTER `/onboard-customer-hub`, BEFORE `/finalize-customer-metabase`.** Health-checks every dashboard the Dashboard Hub will surface for the customer — executes every card on every non-excluded dashboard via the Metabase REST API and reports pass / empty (warn) / failing. Mirrors the production `check_dashboard_health` Cloud Function logic (same exclusion rules, same 60s per-card timeout) so on-demand validation runs the same code path as the 05:00 MT daily job. Refuses to print a `Next:` pointer if any card fails — catches the Hallowell-style stale-field-id failure mode before the customer ever sees it. Read-only. |
 | `/onboard-customer-briefing <slug>` | **Paid add-on only** — provision the CEO AI Briefing for a customer who has purchased it. Do NOT run by default. |
 | `/customer-snapshots <slug>` | Flip dbt snapshots on/off for an existing customer in `single_customers.py` (or `rollup_customers.py`). Add `--off` to disable. |
 
@@ -36,7 +37,22 @@ underlying process is the HTML playbook at
    `/onboard-customer-postcall <slug> --netbird-ip <ip>`
 4. **Provision the hub** (the default dashboard menu — iframed into their Metabase):
    `/onboard-customer-hub <slug> --company "<name>" --metabase-url https://<slug>.xcel.report --metabase-api-key <key>`
-5. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
+5. **Validate every dashboard the hub will surface** (read-only — no writes,
+   runs AFTER `/onboard-customer-hub` registers the tenant and BEFORE
+   `/finalize-customer-metabase` invites users):
+   `/validate-hub-dashboards <slug> [--timeout 60] [--exclude <dashboard-ids>]`
+   Mirrors the production `check_dashboard_health` Cloud Function — fetches
+   every non-excluded dashboard via `GET /api/dashboard`, walks each
+   dashcard, and `POST /api/card/<id>/query` against the customer's
+   warehouse. Reports pass / empty (warn) / failing per dashboard with a
+   sticky summary table. **Hard gate:** if any card fails, the skill
+   refuses to print a `Next:` pointer to `/finalize-customer-metabase` and
+   exits non-zero. Specifically catches the Hallowell stale-field-id
+   failure mode (pMBQL migrator left field-ids pointing at columns the
+   customer's schema doesn't have). Fix path is
+   `metabase-migration/pmbql_migrate.py` (or, once it exists,
+   `/clone-dashboard <slug> <dashboard-id>`).
+6. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
    (pre-call already defaults new customers to `snapshots=True`; only use this
    to flip an existing customer).
 
