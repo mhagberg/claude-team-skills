@@ -14,9 +14,10 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fill `profiles.yml` with the NetBird IP, push `single_customers.py`, trigger the dbt DAG, add Metabase DB + schema sync, clone the dashboard seed-set. |
 | `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
 | `/onboard-customer-briefing <slug>` | Provision the CEO AI Briefing. **Default: 60-day trial countdown.** Pass `--paid` for paid customers (no trial), or `--trial-days N` to override the default 60. |
+| `/configure-customer-metabase <slug>` | **Configure-the-tenant step — runs after `/onboard-customer-hub`, before any validation.** Sets site name, site URL (HTTPS), report timezone (IANA, default `America/Boise`), email From Name + Reply-To, iframe allowlist (`board`, `home`, `ai`, `metagent.app`), custom-homepage-dashboard = `Dashboard Report Menu`, and archives leftover demo users (`Corbin Taylor`, `DataXcel PlayGround User`, `Julie Allen`, `Randy Fullmer`, `playground@xcel.software`, plus anything else not on the keep-allowlist). **The AI agent does all of this automatically using the shared `single.xcel.report` Metabase API key.** Each write requires `yes`. |
+| `/validate-hub-dashboards <slug>` | **Gate AFTER `/configure-customer-metabase`, BEFORE `/validate-customer-metabase`.** Health-checks every dashboard the Dashboard Hub will surface — executes every card via the Metabase REST API, reports pass / empty (warn) / failing. Mirrors the production `check_dashboard_health` Cloud Function. Catches Hallowell-style stale-field-id failure modes. Read-only. |
 | `/validate-customer-metabase <slug>` | **Gate before users get access.** Runs every available Metabase-vs-Sage validator (Balance Sheet, Income Statement / Cash Basis 51-test pytest, AR/AP Aging, `posting_date` filter coverage) within `--tolerance`. Read-only. Refuses to print a `Next:` pointer if any validator fails — Mike's hard rule (2026-05-29): "we need to make sure the numbers validate against the Sage reports before we add the users and give them access." |
-| `/validate-hub-dashboards <slug>` | **Gate AFTER `/onboard-customer-hub`, BEFORE `/finalize-customer-metabase`.** Health-checks every dashboard the Dashboard Hub will surface — executes every card via the Metabase REST API, reports pass / empty (warn) / failing. Mirrors the production `check_dashboard_health` Cloud Function. Catches Hallowell-style stale-field-id failure modes. Read-only. |
-| `/finalize-customer-metabase <slug> --users ...` | **Last step before go-live.** Verifies base URL + timezone, deactivates non-allowlist users (keeps Mike/Stan/Ty + `--users`), invites new customer users. Each write requires `yes`. |
+| `/finalize-customer-metabase <slug> --users ...` | **Last step before go-live.** Invites the customer's users (regular + admin). Hard prerequisite: `/configure-customer-metabase`, `/validate-hub-dashboards`, AND `/validate-customer-metabase` must all have passed. This skill no longer touches site URL / timezone / iframe allowlist / demo-user archive — those moved to `/configure-customer-metabase`. Each write requires `yes`. |
 | `/install-team-skills` | Idempotent installer/updater — clones repo if missing, pulls latest, runs `./install.sh`, confirms every skill resolves. |
 | `/customer-snapshots <slug>` | Flip dbt snapshots on/off for an existing customer in `single_customers.py` (or `rollup_customers.py`). Add `--off` to disable. |
 
@@ -40,25 +41,33 @@ underlying process is the HTML playbook at
    `/onboard-customer-postcall <slug> --netbird-ip <ip>`
 4. **Provision the hub** (the default dashboard menu — iframed into their Metabase):
    `/onboard-customer-hub <slug> --company "<name>" --metabase-url https://<slug>.xcel.report --metabase-api-key <key>`
-5. **Validate every dashboard the hub will surface** (read-only):
+5. **Configure the Metabase tenant** (every customer's Metabase gets the
+   same canonical configuration — site name, HTTPS site URL, IANA
+   timezone, email From Name + Reply-To, iframe allowlist, custom
+   homepage dashboard, and archives leftover demo users):
+   `/configure-customer-metabase <slug> [--site-name "<Display>"] [--timezone <IANA>] [--archive-allowlist email1,email2,...]`
+   **The AI agent does all of this automatically using the shared
+   `single.xcel.report` Metabase API key.** Each write asks for `yes`.
+6. **Validate every dashboard the hub will surface** (read-only):
    `/validate-hub-dashboards <slug> [--timeout 60]`
    Hard gate — if any card fails, fix before proceeding (Hallowell-style
    stale-field-id is the most common cause; see `metabase-migration/pmbql_migrate.py`).
-6. **Validate the Metabase numbers against Sage** (read-only — no writes,
+7. **Validate the Metabase numbers against Sage** (read-only — no writes,
    runs BEFORE any user is added or invited):
    `/validate-customer-metabase <slug> [--reports balance,income,wip,jobcost] [--tolerance 0.01]`
    Runs every available Metabase-vs-Sage validator. **Hard gate —
    Mike's rule (2026-05-29):** do NOT add users until validation is green.
-7. **Provision the CEO AI Briefing** (default — 60-day trial built in):
+8. **Provision the CEO AI Briefing** (default — 60-day trial built in):
    `/onboard-customer-briefing <slug>`
    (pass `--paid` for a customer who has purchased the briefing outright,
    or `--trial-days N` to override the default 60.)
-8. **Finalize the Metabase tenant** (last step before go-live — adds users,
-   verifies base URL + timezone, deactivates leftover demo users):
+9. **Finalize the Metabase tenant** (last step before go-live — invites
+   the customer's users). Hard prerequisite: steps 5, 6, and 7 must all
+   have passed.
    `/finalize-customer-metabase <slug> --users <email1>,<email2> [--admin-users ...]`
-9. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
-   (pre-call already defaults new customers to `snapshots=True`; only use this
-   to flip an existing customer).
+10. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
+    (pre-call already defaults new customers to `snapshots=True`; only use this
+    to flip an existing customer).
 
 ### CEO AI Briefing — 60-day trial by default
 
