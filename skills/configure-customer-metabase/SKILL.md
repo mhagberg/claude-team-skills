@@ -90,6 +90,128 @@ application/json` for writes.
 If any GET returns 401: stop and tell the user the API key is wrong —
 remind them about `--api-key`.
 
+## Step 0 — point the cloned data source at the actual customer warehouse (REQUIRED, NEVER SKIP)
+
+**CRITICAL.** When a customer's Metabase tenant is cloned via
+`duplicate_single.sh`, the Postgres metadata that holds the data-source
+connection (database id=2 in the cloned Metabase app DB) carries over
+verbatim from the demo. The cloned tenant's "Metabase database #2" still
+has the demo's `host` / `port` / `db` / `user` / `password` — for clones
+of `single.xcel.report` that's Vertex Coatings' anonymized SQL Server at
+`100.67.89.249:50285`, user `jobxcel`, db `Vertex Coatings Anonymize
+Reporting`. **Renaming the connection in the Metabase admin UI does NOT
+fix this** — the display name is cosmetic. Until the actual connection
+keys are updated via the REST API, every dashboard, every validation,
+every "Sage vs Metabase" comparison runs against the demo's warehouse,
+not the customer's.
+
+**Order matters:** this step runs BEFORE everything else in this skill
+(site name, site URL, timezone, iframe allowlist, custom homepage,
+demo-user purge). None of those matter if Metabase is querying the wrong
+warehouse.
+
+### 0.1 Resolve the four customer values
+
+Pull these from the **SQL Credentials** + **NetBird Customers** tables
+in
+`/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater/CLAUDE.md`
+(the `/onboard-customer-oncall` skill wrote them there). If a row for
+`<slug>` is missing, stop and tell the user: "Run
+`/onboard-customer-oncall <slug>` first — the customer's NetBird IP,
+SQL port, and `dataxcel` password aren't on file yet."
+
+| Field | Value source |
+|-------|--------------|
+| `<netbird-ip>` | NetBird Customers table → NetBird IP (e.g. `100.67.139.127`) |
+| `<sql-port>` | NetBird Customers table → SQL Port (e.g. `49816`) |
+| `<dataxcel-pw>` | SQL Credentials table → SQL Password for `<slug>` |
+| `<customer-name>` | Slug title-cased, or the Company column if present |
+
+### 0.2 Read the current connection (read-only — surfaces the drift)
+
+```
+GET <metabase-url>/api/database/2
+```
+
+Print a one-line summary:
+
+```
+Current MB DB id=2: host=<current-host> port=<current-port> db=<current-db> user=<current-user>
+Target           : host=<netbird-ip>    port=<sql-port>     db=dataxcel_analytics user=dataxcel
+```
+
+If they already match (the customer was re-onboarded, or this skill
+already ran), skip 0.3 + 0.4 and move on to Step 1.
+
+### 0.3 Apply the connection (RISKY — confirm)
+
+Show the exact body and ask `yes`:
+
+```
+PUT <metabase-url>/api/database/2
+Headers:
+  x-api-key: <api-key>
+  Content-Type: application/json
+Body:
+{
+  "name": "<customer-name> Analytics",
+  "engine": "sqlserver",
+  "details": {
+    "host": "<netbird-ip>",
+    "port": <sql-port>,
+    "db": "dataxcel_analytics",
+    "user": "dataxcel",
+    "password": "<dataxcel-pw>",
+    "ssl": false,
+    "trust-server-certificate": true
+  }
+}
+```
+
+On `yes`, run the PUT. Then trigger a schema sync:
+
+```
+POST <metabase-url>/api/database/2/sync_schema
+```
+
+If DB id=2 does NOT exist on the cloned tenant (rare — the seed clone
+should always have it; happens only if Mike manually deleted it), fall
+back to `POST <metabase-url>/api/database` with the same body shape and
+capture the returned id for the smoke query in 0.4.
+
+### 0.4 Verify — GET, not the PUT echo (REQUIRED)
+
+Metabase echoes back the PUT body even in edge cases where the change
+didn't persist. The ONLY honest check is a fresh GET:
+
+```
+GET <metabase-url>/api/database/2
+→ assert details.host == <netbird-ip>
+→ assert details.port == <sql-port>
+→ assert details.db == "dataxcel_analytics"
+→ assert details.user == "dataxcel"
+```
+
+Then a smoke query that hits a table that only exists in the customer's
+real warehouse:
+
+```
+POST <metabase-url>/api/dataset
+{"database":2,"type":"native","native":{"query":"SELECT TOP 1 ledger_account_id FROM dbo.Ledger_Accounts_by_Month"}}
+```
+
+Must return rows. If it errors with `Cannot open database 'Vertex
+Coatings Anonymize Reporting' requested by the login. The login failed.`
+(or any reference to the demo's DB name), the PUT didn't persist — stop
+and tell the user. Do NOT continue to Step 1 until this smoke query
+succeeds against the customer's warehouse.
+
+Print:
+
+```
+MB DB id=2 now points at <netbird-ip>:<sql-port>/dataxcel_analytics — smoke query returned <N> row(s). OK.
+```
+
 ## Step 3 — read-only baseline check
 
 Pull the current values for everything we're about to touch. Single table
@@ -364,8 +486,13 @@ purely about adding the customer's real users at the very end.
 
 - Does NOT add new customer users — that's `/finalize-customer-metabase`,
   which runs LAST, after both validation skills are green.
-- Does NOT touch the Metabase database connection (that's
-  `/onboard-customer-postcall`).
+- Does touch the Metabase database connection — **Step 0** updates the
+  cloned tenant's `db id=2` to point at the customer's actual warehouse.
+  This is a belt-and-suspenders re-application of the same update
+  `/onboard-customer-postcall` Step 6 makes. Both skills do it so that
+  whichever one runs second still verifies the connection is right
+  before anything downstream queries it. NEVER skip — see the "Why"
+  in Step 0.
 - Does NOT install iframes (briefing iframe is the briefing skill's job;
   Hub iframe is the hub skill's job). This skill only adds the iframe
   hosts to the allowlist so those iframes can render.
