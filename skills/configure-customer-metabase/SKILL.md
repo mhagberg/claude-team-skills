@@ -162,8 +162,9 @@ Body:
     "db": "dataxcel_analytics",
     "user": "dataxcel",
     "password": "<dataxcel-pw>",
-    "ssl": false,
-    "trust-server-certificate": true
+    "ssl": true,
+    "trust-server-certificate": true,
+    "additional-options": "trustServerCertificate=true"
   }
 }
 ```
@@ -179,6 +180,25 @@ should always have it; happens only if Mike manually deleted it), fall
 back to `POST <metabase-url>/api/database` with the same body shape and
 capture the returned id for the smoke query in 0.4.
 
+> **Why BOTH `ssl: true` AND `additional-options:
+> "trustServerCertificate=true"` are required.** `ssl: true` is
+> Metabase's API model for the GUI "Use a secure connection (SSL)"
+> toggle — without it the connection is unencrypted, which fails
+> customer security review and may not work at all against SQL Servers
+> that require encryption (and is the same setting Mike turns on by
+> hand in the admin UI). `additional-options:
+> "trustServerCertificate=true"` is the literal JDBC connection-string
+> option that gets appended to the SQL Server JDBC URL, and is shown
+> in the Metabase GUI as "Additional JDBC connection string options".
+> The top-level `trust-server-certificate: true` field is Metabase's
+> own API model for the GUI toggle of the same name; the
+> `additional-options` field is the literal JDBC string the driver
+> consumes. They are NOT redundant — some Metabase versions only
+> respect one, and some SQL Server JDBC driver versions ignore one
+> without the other. Including both is the safe canonical shape;
+> customer Sage servers behind NetBird present self-signed certs, so
+> without trust-server-certificate the encrypted handshake fails.
+
 ### 0.4 Verify — GET, not the PUT echo (REQUIRED)
 
 Metabase echoes back the PUT body even in edge cases where the change
@@ -190,6 +210,9 @@ GET <metabase-url>/api/database/2
 → assert details.port == <sql-port>
 → assert details.db == "dataxcel_analytics"
 → assert details.user == "dataxcel"
+→ assert details.ssl == True
+→ assert details["additional-options"] == "trustServerCertificate=true"
+→ assert details["trust-server-certificate"] == True
 ```
 
 Then a smoke query that hits a table that only exists in the customer's
