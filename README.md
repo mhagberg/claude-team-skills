@@ -10,8 +10,9 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/parallel-plan-review` | 5 independent agents review discovered plan files in parallel, each rate 1–10. Consolidated table + recommendations. |
 | `/books-audit` | 10 independent agents audit the Xcel + Hagberg Odoo books in parallel — balance integrity, bookkeeping mistakes, tax deductions, tax red flags. Emits a styled **HTML report** (auto-opens) with a P&L summary, CFO/CTO perspective, and a one-click copy-paste **action item** under each finding to run the fix in Claude Code. Read-only. |
 | `/onboard-customer` | Orchestrator — opens the HTML onboarding playbook and routes you to the right sub-skill for your current phase. |
-| `/onboard-customer-precall <slug>` | Pre-call staging (~30 min before the IT meeting): NetBird provision, per-customer Sage SQL script, EKS Metabase tenant, draft `profiles.yml` + `single_customers.py` entries. |
-| `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fill `profiles.yml` with the NetBird IP, push `single_customers.py`, trigger the dbt DAG, add Metabase DB + schema sync, clone the dashboard seed-set. |
+| `/onboard-customer-precall <slug>` | Pre-call staging (~30 min before the IT meeting): 1Password entry prompt, EKS Metabase tenant clone (with mandatory session-blocking workaround + ownership transfer), Namecheap CNAME instructions, draft `profiles.yml`/`single_customers.py` entries with `<TBD>` placeholders, and NetBird provisioning with a placeholder SQL port (the live port is set in oncall). **Only required arg: `<slug>`.** |
+| `/onboard-customer-oncall <slug>` | Live-call skill: confirms pre-call ran, prints the IT-facing quickstart URL, pauses for IT to install NetBird, captures NetBird IP + real SQL port via pause-prompts, updates the NetBird policy port (placeholder → real), renames the peer to `<slug>-sage`, prints the sysadmin-script URL, captures the `dataxcel` SQL password, lists Sage company DBs via `SELECT name FROM sys.databases` and asks Mike which is live, creates `dataxcel_analytics`, and writes everything back to `XcelConnectAndUpdater/CLAUDE.md`. **Only required arg: `<slug>`.** |
+| `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fills `profiles.yml` with the real NetBird IP / SQL port / Sage DB / dataxcel password (from CLI flags OR by reading the customer table the on-call skill just wrote), pushes `single_customers.py`, triggers the dbt DAG, adds Metabase DB + schema sync, clones the dashboard seed-set. Optional flags: `--netbird-ip`, `--sql-port`, `--sage-db`, `--dataxcel-pw`. |
 | `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
 | `/onboard-customer-briefing <slug>` | Provision the CEO AI Briefing. **Default: 60-day trial countdown.** Pass `--paid` for paid customers (no trial), or `--trial-days N` to override the default 60. |
 | `/configure-customer-metabase <slug>` | **Configure-the-tenant step — runs after `/onboard-customer-hub`, before any validation.** Sets site name, site URL (HTTPS), report timezone (IANA, default `America/Boise`), email From Name + Reply-To, iframe allowlist (`board`, `home`, `ai`, `metagent.app`), custom-homepage-dashboard = `Dashboard Report Menu`, and archives leftover demo users (`Corbin Taylor`, `DataXcel PlayGround User`, `Julie Allen`, `Randy Fullmer`, `playground@xcel.software`, plus anything else not on the keep-allowlist). **The AI agent does all of this automatically using the shared `single.xcel.report` Metabase API key.** Each write requires `yes`. |
@@ -30,17 +31,40 @@ underlying process is the HTML playbook at
 `XcelConnectAndUpdater/docs/new-customer-onboarding.html` — open it with
 `/onboard-customer` and follow along.
 
+Every required arg below is a value Mike has in hand at the moment that
+step starts. Values produced by an earlier step are passed forward by
+the printed `Next:` line OR re-read from `XcelConnectAndUpdater/CLAUDE.md`,
+which the live-call skill updates as soon as IT reports them.
+
 1. **Pre-call** (Mike, ~30 min before the IT meeting):
-   `/onboard-customer-precall <slug> --sql-port <port> --sage-dbs <CompanyA,CompanyB>`
-2. **On the call with customer IT** (~30 min): customer IT runs
-   `connect-netbird.ps1` and `setup-sage-readonly-<slug>.sql` themselves —
-   instructions live in the HTML playbook (and the email template the
-   pre-call skill printed for you). Mike captures the NetBird IP the agent
-   reports.
+   `/onboard-customer-precall <slug>`
+   Only `<slug>` required. Optional `--company-name "<Display>"`
+   (defaults to title-cased slug). NetBird is provisioned with a placeholder
+   SQL port of `1433` — that gets corrected during the call.
+2. **On the call with customer IT** (~30–45 min):
+   `/onboard-customer-oncall <slug>`
+   The skill prints the IT-facing quickstart URL for Mike to forward
+   (`https://broker.xcel.report/updates/quickstart-<slug>.html`) and
+   pauses for IT to run the install. It then captures the NetBird IP +
+   real SQL port + `dataxcel` password via pause-prompts, lists the
+   customer's Sage company DBs via `SELECT name FROM sys.databases`,
+   updates the NetBird policy port, renames the peer to `<slug>-sage`,
+   creates `dataxcel_analytics`, and writes everything to
+   `XcelConnectAndUpdater/CLAUDE.md`. **No customer-IT-runs-X copy-pasta
+   in this README — the skill prints the line for Mike to forward, per
+   the skill-first rule.**
 3. **Post-call** (Mike/Ty, ~15 min after the call):
    `/onboard-customer-postcall <slug> --netbird-ip <ip>`
+   `--netbird-ip` is optional — if omitted (or any of `--sql-port`,
+   `--sage-db`, `--dataxcel-pw`), the skill reads the values from the
+   customer table in `XcelConnectAndUpdater/CLAUDE.md` (the on-call
+   skill just wrote them there).
 4. **Provision the hub** (the default dashboard menu — iframed into their Metabase):
-   `/onboard-customer-hub <slug> --company "<name>" --metabase-url https://<slug>.xcel.report --metabase-api-key <key>`
+   `/onboard-customer-hub <slug>`
+   Only `<slug>` required. `--company`, `--metabase-url`, and
+   `--metabase-api-key` all default sensibly (title-cased slug,
+   `https://<slug>.xcel.report`, shared `single.xcel.report` API key —
+   override only for dedicated-instance customers).
 5. **Configure the Metabase tenant** (every customer's Metabase gets the
    same canonical configuration — site name, HTTPS site URL, IANA
    timezone, email From Name + Reply-To, iframe allowlist, custom
