@@ -13,12 +13,11 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/onboard-customer-precall <slug>` | Pre-call staging (~30 min before the IT meeting): NetBird provision, per-customer Sage SQL script, EKS Metabase tenant, draft `profiles.yml` + `single_customers.py` entries. |
 | `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fill `profiles.yml` with the NetBird IP, push `single_customers.py`, trigger the dbt DAG, add Metabase DB + schema sync, clone the dashboard seed-set. |
 | `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
-<<<<<<< HEAD
 | `/onboard-customer-briefing <slug>` | Provision the CEO AI Briefing. **Default: 60-day trial countdown.** Pass `--paid` for paid customers (no trial), or `--trial-days N` to override the default 60. |
-=======
-| `/onboard-customer-briefing <slug>` | **Paid add-on only** — provision the CEO AI Briefing for a customer who has purchased it. Do NOT run by default. |
-| `/validate-customer-metabase <slug>` | **Gate before users get access.** Runs every available Metabase-vs-Sage validator (Balance Sheet, Income Statement / Cash Basis 51-test pytest, AR/AP Aging, `posting_date` filter coverage) within `--tolerance`. Read-only. **Refuses to print a `Next:` pointer if any validator fails** — Mike's hard rule (2026-05-29): "we need to make sure the numbers validate against the Sage reports before we add the users and give them access." |
->>>>>>> origin/feat/validate-customer-metabase
+| `/validate-customer-metabase <slug>` | **Gate before users get access.** Runs every available Metabase-vs-Sage validator (Balance Sheet, Income Statement / Cash Basis 51-test pytest, AR/AP Aging, `posting_date` filter coverage) within `--tolerance`. Read-only. Refuses to print a `Next:` pointer if any validator fails — Mike's hard rule (2026-05-29): "we need to make sure the numbers validate against the Sage reports before we add the users and give them access." |
+| `/validate-hub-dashboards <slug>` | **Gate AFTER `/onboard-customer-hub`, BEFORE `/finalize-customer-metabase`.** Health-checks every dashboard the Dashboard Hub will surface — executes every card via the Metabase REST API, reports pass / empty (warn) / failing. Mirrors the production `check_dashboard_health` Cloud Function. Catches Hallowell-style stale-field-id failure modes. Read-only. |
+| `/finalize-customer-metabase <slug> --users ...` | **Last step before go-live.** Verifies base URL + timezone, deactivates non-allowlist users (keeps Mike/Stan/Ty + `--users`), invites new customer users. Each write requires `yes`. |
+| `/install-team-skills` | Idempotent installer/updater — clones repo if missing, pulls latest, runs `./install.sh`, confirms every skill resolves. |
 | `/customer-snapshots <slug>` | Flip dbt snapshots on/off for an existing customer in `single_customers.py` (or `rollup_customers.py`). Add `--off` to disable. |
 
 See [`CLAUDE.md`](./CLAUDE.md) for the design spec.
