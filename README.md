@@ -19,6 +19,7 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/validate-hub-dashboards <slug>` | **Gate AFTER `/configure-customer-metabase`, BEFORE `/validate-customer-metabase`.** Health-checks every dashboard the Dashboard Hub will surface — executes every card via the Metabase REST API, reports pass / empty (warn) / failing. Mirrors the production `check_dashboard_health` Cloud Function. Catches Hallowell-style stale-field-id failure modes. Read-only. |
 | `/validate-customer-metabase <slug>` | **Gate before users get access.** Runs every available Metabase-vs-Sage validator (Balance Sheet, Income Statement / Cash Basis 51-test pytest, AR/AP Aging, `posting_date` filter coverage) within `--tolerance`. Read-only. Refuses to print a `Next:` pointer if any validator fails — Mike's hard rule (2026-05-29): "we need to make sure the numbers validate against the Sage reports before we add the users and give them access." |
 | `/finalize-customer-metabase <slug> --users ...` | **Last step before go-live.** Invites the customer's users (regular + admin). Hard prerequisite: `/configure-customer-metabase`, `/validate-hub-dashboards`, AND `/validate-customer-metabase` must all have passed. This skill no longer touches site URL / timezone / iframe allowlist / demo-user archive — those moved to `/configure-customer-metabase`. Each write requires `yes`. |
+| `/register-customer-status-page <slug>` | **Phase 10 — final onboarding step.** Appends `<slug>` to `INSTANCES` in `dataxcel-customer-report/customer_report/registry.py` (AST-validated + unit-tested), commits + pushes a feature branch in the submodule, and triggers a one-off `customer_report_dag` run so the customer appears at `https://customers.xcel.report`. Only required arg: `<slug>`. Optional flags: `--company`, `--multi`, `--refresh-dag`, `--odoo-sub`, `--internal`. |
 | `/install-team-skills` | Idempotent installer/updater — clones repo if missing, pulls latest, runs `./install.sh`, confirms every skill resolves. |
 | `/customer-snapshots <slug>` | Flip dbt snapshots on/off for an existing customer in `single_customers.py` (or `rollup_customers.py`). Add `--off` to disable. |
 
@@ -85,11 +86,23 @@ which the live-call skill updates as soon as IT reports them.
    `/onboard-customer-briefing <slug>`
    (pass `--paid` for a customer who has purchased the briefing outright,
    or `--trial-days N` to override the default 60.)
-9. **Finalize the Metabase tenant** (last step before go-live — invites
-   the customer's users). Hard prerequisite: steps 5, 6, and 7 must all
-   have passed.
+9. **Finalize the Metabase tenant** (invites the customer's users). Hard
+   prerequisite: steps 5, 6, and 7 must all have passed.
    `/finalize-customer-metabase <slug> --users <email1>,<email2> [--admin-users ...]`
-10. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
+10. **Register the customer on the daily status page** (last step of the
+    canonical sequence — makes the customer visible on
+    `https://customers.xcel.report`):
+    `/register-customer-status-page <slug>`
+    Only `<slug>` required. Optional `--company "<Display>"`, `--multi`
+    (for rollup customers), `--refresh-dag <dag_id>` (override the
+    `<slug>_dataxcel_analytics_dbt_dag` default), `--odoo-sub
+    S00150,S00007` (S-numbers from the customer's Odoo subscription
+    quotes), `--internal` (mark as internal demo / playground row).
+    Appends to `dataxcel-customer-report/customer_report/registry.py`,
+    pushes a feature branch, and triggers a one-off
+    `customer_report_dag` run so the new row appears tonight instead of
+    tomorrow.
+11. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
     (pre-call already defaults new customers to `snapshots=True`; only use this
     to flip an existing customer).
 
