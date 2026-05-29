@@ -1,6 +1,6 @@
 ---
 name: configure-customer-metabase
-description: Configure a newly-cloned customer Metabase tenant to the canonical DataXcel settings — site name, HTTPS site URL, IANA timezone, email From Name + Reply-To, iframe allowlist, custom-homepage-dashboard — and archive non-team users left over from the demo clone. Runs AFTER `/onboard-customer-hub` and BEFORE `/validate-hub-dashboards`. **The AI agent does all of this automatically using the shared `single.xcel.report` Metabase API key.**
+description: Configure a newly-cloned customer Metabase tenant to the canonical DataXcel settings — site name, HTTPS site URL, IANA timezone, email From Name + Reply-To, email address for help requests (admin-email), iframe allowlist, custom-homepage-dashboard — and archive non-team users left over from the demo clone. Runs AFTER `/onboard-customer-hub` and BEFORE `/validate-hub-dashboards`. **The AI agent does all of this automatically using the shared `single.xcel.report` Metabase API key.**
 ---
 
 # configure-customer-metabase
@@ -247,8 +247,9 @@ out so the user can eyeball drift before any writes happen.
 | 3 | report-timezone | `GET <metabase-url>/api/setting/report-timezone` |
 | 4 | email-from-name | `GET <metabase-url>/api/setting/email-from-name` |
 | 5 | email-reply-to | `GET <metabase-url>/api/setting/email-reply-to` |
-| 6 | allowed-iframe-hosts | `GET <metabase-url>/api/setting/allowed-iframe-hosts` |
-| 7 | custom-homepage-dashboard | `GET <metabase-url>/api/setting/custom-homepage-dashboard` |
+| 6 | admin-email | `GET <metabase-url>/api/setting/admin-email` |
+| 7 | allowed-iframe-hosts | `GET <metabase-url>/api/setting/allowed-iframe-hosts` |
+| 8 | custom-homepage-dashboard | `GET <metabase-url>/api/setting/custom-homepage-dashboard` |
 
 Also `GET <metabase-url>/api/user?include_deactivated=false` (paginate by
 `limit`/`offset` if the envelope reports `total > 100`) — needed for the
@@ -263,6 +264,7 @@ site-url                        <current>                        <target>       
 report-timezone                 <current>                        <target>                        OK / WRONG
 email-from-name                 <current>                        DataXcel Support                OK / WRONG
 email-reply-to                  <current>                        ["support@xcel.software"]       OK / WRONG
+admin-email                     <current>                        scline@xcel.software            OK / WRONG
 allowed-iframe-hosts            <current, truncated>             <merged>                        OK / NEEDS-MERGE
 custom-homepage-dashboard       <current id> (<name>)            <Dashboard Report Menu id>      OK / WRONG / MISSING
 Users found                     <N total>                        (inventory only)                —
@@ -270,7 +272,7 @@ Users found                     <N total>                        (inventory only
 
 ## Step 4 — apply settings (RISKY — one confirm per write)
 
-For each of settings 1–7, if Status is OK skip silently. For each one that
+For each of settings 1–8, if Status is OK skip silently. For each one that
 needs a change, ask `yes` per write, showing the exact URL + body. Apply
 them in the table order.
 
@@ -329,7 +331,28 @@ PUT <metabase-url>/api/setting/email-reply-to
 {"value": ["support@xcel.software"]}
 ```
 
-### 4.6 allowed-iframe-hosts
+### 4.6 admin-email
+
+Target = literal string `scline@xcel.software`. Hard-coded — not a flag.
+This is the Metabase admin → Settings → General → Email → "Email address
+for help requests" field. It's the address Metabase shows users in error
+pages and "contact your admin" links. Stan Cline is the canonical admin —
+same human whose email is in the team allowlist below (the demo-user
+purge protects this address from deactivation).
+
+```
+PUT <metabase-url>/api/setting/admin-email
+{"value": "scline@xcel.software"}
+```
+
+Verify with a GET:
+
+```
+GET <metabase-url>/api/setting/admin-email
+→ assert response == "scline@xcel.software"
+```
+
+### 4.7 allowed-iframe-hosts
 
 Read the current value. Ensure these four hosts are present (add any that
 are missing, preserve everything else):
@@ -356,7 +379,7 @@ PUT <metabase-url>/api/setting/allowed-iframe-hosts
 (Build the body off the actual current value — do not hard-code the
 example above.)
 
-### 4.7 custom-homepage-dashboard
+### 4.8 custom-homepage-dashboard
 
 The canonical homepage on every customer instance is a dashboard literally
 named `Dashboard Report Menu`. If `custom-homepage-dashboard` is unset, or
@@ -474,6 +497,7 @@ site-url                        OK (https://lunstrum.xcel.report)
 report-timezone                 OK (America/Boise)
 email-from-name                 OK (DataXcel Support)
 email-reply-to                  OK (["support@xcel.software"])
+admin-email                     OK (scline@xcel.software)
 allowed-iframe-hosts            OK (board, home, ai, metagent present)
 custom-homepage-dashboard       OK (id=42 "Dashboard Report Menu")
 
