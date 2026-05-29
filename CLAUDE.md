@@ -101,7 +101,9 @@ ones:
   prompted for; missing files are a stop-and-tell.
 - **End with a "Next:" pointer.** Each sub-skill ends by printing the exact
   slash command for the next phase so the user always knows where they are
-  in the canonical sequence (precall → postcall → briefing → hub).
+  in the canonical sequence (precall → postcall → hub → briefing). The
+  briefing is part of the default flow with a 60-day trial countdown built
+  in; pass `--paid` to provision without the trial.
 - **HTML playbook is the source of truth.** The skills are thin wrappers —
   the playbook owns the prose explanation, troubleshooting appendix, and
   multi-company variant. If a skill and the playbook disagree, the playbook
