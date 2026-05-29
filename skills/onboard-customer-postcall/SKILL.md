@@ -212,8 +212,9 @@ Confirm with the exact URL + body:
 >   details.db: dataxcel_analytics
 >   details.user: dataxcel
 >   details.password: <dataxcel-pw>
->   details.ssl: false
+>   details.ssl: true
 >   details.trust-server-certificate: true
+>   details.additional-options: "trustServerCertificate=true"
 >
 > Type `yes`.
 
@@ -234,11 +235,29 @@ Body:
     "db": "dataxcel_analytics",
     "user": "dataxcel",
     "password": "<dataxcel-pw>",
-    "ssl": false,
-    "trust-server-certificate": true
+    "ssl": true,
+    "trust-server-certificate": true,
+    "additional-options": "trustServerCertificate=true"
   }
 }
 ```
+
+> **Why BOTH `ssl: true` AND `additional-options:
+> "trustServerCertificate=true"` are required.** `ssl: true` is
+> Metabase's API model for the GUI "Use a secure connection (SSL)"
+> toggle — without it the connection is unencrypted and fails customer
+> security review (and may not connect at all to SQL Servers that
+> require encryption). `additional-options:
+> "trustServerCertificate=true"` is the literal JDBC connection-string
+> option appended to the SQL Server JDBC URL (Metabase GUI: "Additional
+> JDBC connection string options"). The top-level
+> `trust-server-certificate: true` is Metabase's API model for the GUI
+> toggle of the same name; `additional-options` is the literal string
+> the driver actually consumes. They are NOT redundant — some Metabase
+> versions only respect one, and some SQL Server JDBC driver versions
+> ignore one without the other. Both must be present. Customer Sage
+> servers behind NetBird present self-signed certs, so without
+> trust-server-certificate the encrypted handshake fails.
 
 Then trigger the schema sync:
 
@@ -260,6 +279,9 @@ GET <metabase-url>/api/database/2
 → assert details.port == <sql-port>
 → assert details.db == "dataxcel_analytics"
 → assert details.user == "dataxcel"
+→ assert details.ssl == True
+→ assert details["additional-options"] == "trustServerCertificate=true"
+→ assert details["trust-server-certificate"] == True
 ```
 
 Then a smoke query against a table that only exists in the customer's
