@@ -25,6 +25,16 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 
 See [`CLAUDE.md`](./CLAUDE.md) for the design spec.
 
+## Notation
+
+In this README, in every SKILL.md, and in the HTML playbook at
+`XcelConnectAndUpdater/docs/new-customer-onboarding.html`, anything in
+`<angle brackets>` is a **placeholder** — replace it with your actual
+value. Example: for the customer named `lunstrum`, `<slug>` means
+`lunstrum`, so `/onboard-customer <slug>` becomes
+`/onboard-customer lunstrum`. Anything NOT in angle brackets is literal
+text you type as-is.
+
 ## Onboarding a new DataXcel customer
 
 The canonical sequence, wired to slash commands. Source of truth for the

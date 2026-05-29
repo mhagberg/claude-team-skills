@@ -5,6 +5,10 @@ description: Register a customer on the daily customers.xcel.report status page 
 
 # register-customer-status-page
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/register-customer-status-page <slug>` becomes `/register-customer-status-page lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **register-customer-status-page** skill. Goal: add a
 brand-new customer to the daily internal status page at
 `https://customers.xcel.report` so Mike + the team can see the customer's

@@ -5,6 +5,10 @@ description: Pre-call staging for a new DataXcel customer — 1Password entry pr
 
 # onboard-customer-precall
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/onboard-customer-precall <slug>` becomes `/onboard-customer-precall lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **onboard-customer-precall** skill. Goal: get ~99% of a
 new customer's infrastructure staged BEFORE the IT call — without requiring
 any value the operator does not yet have.

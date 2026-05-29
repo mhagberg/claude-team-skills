@@ -5,6 +5,10 @@ description: Post-call wiring for a new DataXcel customer — fills profiles.yml
 
 # onboard-customer-postcall
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/onboard-customer-postcall <slug>` becomes `/onboard-customer-postcall lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **onboard-customer-postcall** skill. Goal: take the
 four values `/onboard-customer-oncall` captured (NetBird IP, SQL port,
 Sage DB name, `dataxcel` password) and wire them into the dbt + Metabase

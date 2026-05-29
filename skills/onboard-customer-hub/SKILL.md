@@ -5,6 +5,10 @@ description: Register a customer in the Dashboard Hub — append to TENANT_INSTA
 
 # onboard-customer-hub
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/onboard-customer-hub <slug>` becomes `/onboard-customer-hub lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **onboard-customer-hub** skill. Goal: register a new
 tenant in the Dashboard Hub (`home.xcel.report`). The heavy lifting is in
 `dataxcel-dashboard-hub/scripts/register_tenant.py`; your job is to gather

@@ -5,6 +5,10 @@ description: Run every available Metabase-vs-Sage validation suite against a cus
 
 # validate-customer-metabase
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/validate-customer-metabase <slug>` becomes `/validate-customer-metabase lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **validate-customer-metabase** skill. This skill is a
 **gate** in the canonical onboarding sequence:
 

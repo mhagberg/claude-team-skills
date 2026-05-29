@@ -5,6 +5,10 @@ description: Configure a newly-cloned customer Metabase tenant to the canonical 
 
 # configure-customer-metabase
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/configure-customer-metabase <slug>` becomes `/configure-customer-metabase lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **configure-customer-metabase** skill. Goal: take a
 freshly-cloned customer Metabase tenant and snap it to the canonical
 DataXcel configuration in one go — settings, email metadata, iframe

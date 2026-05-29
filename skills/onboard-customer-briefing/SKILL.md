@@ -5,6 +5,10 @@ description: Provision the CEO AI Briefing for a customer (60-day trial countdow
 
 # onboard-customer-briefing
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/onboard-customer-briefing <slug>` becomes `/onboard-customer-briefing lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **onboard-customer-briefing** skill. Goal: stand up the
 customer's monthly CEO AI Briefing — one YAML, one dry-run, one iframe
 install. The Airflow `board_report_dag_factory.py` auto-emits the per-customer

@@ -5,6 +5,10 @@ description: Health-check EVERY dashboard the DataXcel Dashboard Hub will surfac
 
 # validate-hub-dashboards
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/validate-hub-dashboards <slug>` becomes `/validate-hub-dashboards lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **validate-hub-dashboards** skill. This is a
 **health-check gate** that sits between hub provisioning and final user
 invites in the canonical onboarding sequence:

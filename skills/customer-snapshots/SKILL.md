@@ -5,6 +5,10 @@ description: Toggle dbt snapshots on or off for a single customer in single_cust
 
 # customer-snapshots
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/customer-snapshots <slug>` becomes `/customer-snapshots lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **customer-snapshots** skill. Goal: flip a single
 customer's `snapshots=` flag in the dbt customer registry. Default action is
 ON; pass `--off` to disable.

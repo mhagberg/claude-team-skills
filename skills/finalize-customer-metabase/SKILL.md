@@ -5,6 +5,10 @@ description: FINAL step before a DataXcel customer goes live — invites the cus
 
 # finalize-customer-metabase
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/finalize-customer-metabase <slug>` becomes `/finalize-customer-metabase lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **finalize-customer-metabase** skill. This is the
 LAST gate before a customer's Metabase instance is handed to them. Goal:
 add the customer's users (regular + admin), nothing else.

@@ -5,6 +5,10 @@ description: Live-call skill for a new DataXcel customer — confirms pre-call r
 
 # onboard-customer-oncall
 
+## Notation
+
+In this doc and everywhere else (README, playbook, other SKILL.md files), anything in `<angle brackets>` is a **placeholder** — replace it with your actual value. Example: for the customer named `lunstrum`, `<slug>` means `lunstrum`, so `/onboard-customer-oncall <slug>` becomes `/onboard-customer-oncall lunstrum`. Anything NOT in angle brackets is literal text to type as-is.
+
 You are running the **onboard-customer-oncall** skill. Goal: drive the
 live kickoff call with customer IT — collect every value that didn't exist
 at pre-call time, wire them up, and hand a fully-populated set of args to
