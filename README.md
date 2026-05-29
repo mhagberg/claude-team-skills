@@ -9,8 +9,65 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/parallel-code-review` | 5 independent agents review the current `git diff` (or a PR), each rate 1–10. Consolidated table + recommendations. |
 | `/parallel-plan-review` | 5 independent agents review discovered plan files in parallel, each rate 1–10. Consolidated table + recommendations. |
 | `/books-audit` | 10 independent agents audit the Xcel + Hagberg Odoo books in parallel — balance integrity, bookkeeping mistakes, tax deductions, tax red flags. Emits a styled **HTML report** (auto-opens) with a P&L summary, CFO/CTO perspective, and a one-click copy-paste **action item** under each finding to run the fix in Claude Code. Read-only. |
+| `/onboard-customer` | Orchestrator — opens the HTML onboarding playbook and routes you to the right sub-skill for your current phase. |
+| `/onboard-customer-precall <slug>` | Pre-call staging (~30 min before the IT meeting): NetBird provision, per-customer Sage SQL script, EKS Metabase tenant, draft `profiles.yml` + `single_customers.py` entries. |
+| `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fill `profiles.yml` with the NetBird IP, push `single_customers.py`, trigger the dbt DAG, add Metabase DB + schema sync, clone the dashboard seed-set. |
+| `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
+| `/onboard-customer-briefing <slug>` | **Paid add-on only** — provision the CEO AI Briefing for a customer who has purchased it. Do NOT run by default. |
+| `/customer-snapshots <slug>` | Flip dbt snapshots on/off for an existing customer in `single_customers.py` (or `rollup_customers.py`). Add `--off` to disable. |
 
 See [`CLAUDE.md`](./CLAUDE.md) for the design spec.
+
+## Onboarding a new DataXcel customer
+
+The canonical sequence, wired to slash commands. Source of truth for the
+underlying process is the HTML playbook at
+`XcelConnectAndUpdater/docs/new-customer-onboarding.html` — open it with
+`/onboard-customer` and follow along.
+
+1. **Pre-call** (Mike, ~30 min before the IT meeting):
+   `/onboard-customer-precall <slug> --sql-port <port> --sage-dbs <CompanyA,CompanyB>`
+2. **On the call with customer IT** (~30 min): customer IT runs
+   `connect-netbird.ps1` and `setup-sage-readonly-<slug>.sql` themselves —
+   instructions live in the HTML playbook (and the email template the
+   pre-call skill printed for you). Mike captures the NetBird IP the agent
+   reports.
+3. **Post-call** (Mike/Ty, ~15 min after the call):
+   `/onboard-customer-postcall <slug> --netbird-ip <ip>`
+4. **Provision the hub** (the default dashboard menu — iframed into their Metabase):
+   `/onboard-customer-hub <slug> --company "<name>" --metabase-url https://<slug>.xcel.report --metabase-api-key <key>`
+5. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
+   (pre-call already defaults new customers to `snapshots=True`; only use this
+   to flip an existing customer).
+
+### Paid add-on: CEO AI Briefing
+
+**Do not provision by default.** The CEO AI Briefing is a separate paid product —
+the monthly PDF, the Claude narrative, the `board.xcel.report` iframe on the
+customer's Metabase. New customers get the Dashboard Hub iframe only; the
+Briefing iframe is **not** installed unless the customer has purchased the
+add-on.
+
+When a customer buys the Briefing:
+
+```
+/onboard-customer-briefing <slug>
+```
+
+That skill copies `customers/<slug>.yaml` from the AIS template, sets
+`enabled: true` (which triggers the Airflow DAG factory to start generating
+their monthly report on the 1st), and installs the `board.xcel.report` iframe
+on their Metabase home dashboard above the existing Hub iframe.
+
+Customers without `enabled: true` in their `customers/<slug>.yaml` get **no**
+briefing DAG and **no** briefing iframe — the factory and installer both skip
+them. This is the safety mechanism: an existing customer cannot accidentally
+end up with a Briefing they did not pay for.
+
+All onboarding skills **execute commands directly** and ask for an explicit
+`yes` confirmation only on **risky** steps (writes to remote Git, kubectl
+apply, NetBird API mutations, Metabase API writes, Firestore writes, dbt DAG
+triggers). Read-only checks and local file edits run without prompting.
 
 ## Install (each teammate runs once)
 

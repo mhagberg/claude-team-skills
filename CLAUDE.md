@@ -74,3 +74,39 @@ To add a new parallel-N skill (e.g. `/parallel-security-review`):
 - Not a CI tool. These run inside an interactive Claude Code session, not in GitHub Actions.
 - Not a replacement for `/ultrareview` (which is a separate Anthropic-hosted multi-agent review). These skills are local, free, and tunable.
 - No persistence — each run is independent. If you want history, pipe the output to a file.
+
+## Customer-onboarding skill family
+
+A second family of skills lives alongside the parallel-review skills:
+`/onboard-customer`, `/onboard-customer-precall`, `/onboard-customer-postcall`,
+`/onboard-customer-briefing`, `/onboard-customer-hub`, `/customer-snapshots`.
+These wrap the HTML onboarding playbook at
+`XcelConnectAndUpdater/docs/new-customer-onboarding.html` so Mike, Ty, and Stan
+can run each onboarding phase as a slash command instead of memorising paths,
+flags, and submodule layouts.
+
+These skills follow a different design principle than the parallel-review
+ones:
+
+- **No parallel agents.** Onboarding is a linear, side-effecting workflow,
+  not an analysis run. Each skill is a single host Claude executing a recipe.
+- **Execute with confirmation on risky steps.** Read-only checks and local
+  file edits run unprompted. Writes that cross a trust boundary — remote Git
+  push, `kubectl apply`, NetBird API mutations, Metabase API writes, Firestore
+  writes, dbt DAG triggers — MUST ask the user for an explicit `yes` first
+  and show exactly what will run. The threshold is "can I `git checkout --
+  .` this back?" If no, confirm.
+- **Validate args up front, fail loudly.** Every skill checks its required
+  args and any referenced files/scripts before doing work. Missing args are
+  prompted for; missing files are a stop-and-tell.
+- **End with a "Next:" pointer.** Each sub-skill ends by printing the exact
+  slash command for the next phase so the user always knows where they are
+  in the canonical sequence (precall → postcall → briefing → hub).
+- **HTML playbook is the source of truth.** The skills are thin wrappers —
+  the playbook owns the prose explanation, troubleshooting appendix, and
+  multi-company variant. If a skill and the playbook disagree, the playbook
+  wins; update the skill to match.
+
+The "execute with confirmation on risky steps" pattern is the right shape for
+*any* future operational skill that mutates production. New parallel-N
+analysis skills should still follow the parallel-code-review template.
