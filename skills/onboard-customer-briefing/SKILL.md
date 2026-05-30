@@ -70,11 +70,15 @@ Optional:
 - `--dashboard-id N` — override the homepage dashboard id (default 94).
 - `--api-key mb_...` — override the Metabase API key (default: shared
   `single.xcel.report` key from `XcelConnectAndUpdater/CLAUDE.md`).
+- `--paid` — skip the 60-day trial timer (Step 6). Use for customers
+  who signed an annual subscription at onboarding; default is trial.
+- `--trial-days N` — override the trial length (default 60).
 
 Print a one-line plan:
 
 > Plan: provision CEO weekly briefing for `<slug>` — install iframe on
-> D<dashboard-id>, add to TARGETS, add to weekly DAG. Mode: API | local-claude.
+> D<dashboard-id>, add to TARGETS, set 60-day trial timer, add to weekly DAG.
+> Mode: API | local-claude.
 
 ## Step 2 — register the customer in `install_homepage_iframes.py` (LOCAL edit, no confirm)
 
@@ -237,7 +241,159 @@ this is not a demo... so if you don't have the data we don't make it
 up". Empty AR? `criticalItems: []`. Empty AP? `criticalItems: []`. Do
 not invent items to fill space.
 
-## Step 6 — wire the weekly DAG (LOCAL edit, no confirm)
+## Step 6 — set the 60-day trial timer (RISKY — confirm, skip if `--paid`)
+
+The briefing app shows an in-app trial countdown driven by three fields
+on the Firestore tenant config: `subscriptionStatus`, `trialStartDate`,
+`trialEndDate`. Without these, the countdown banner stays hidden and
+the customer gets no urgency signal.
+
+**Security note:** the Cloud Function uses a shared `API_SECRET`
+(hardcoded at `dataxcel-ai-briefing/scripts/update_dashboard_links.py:14`)
+that is not per-tenant. Anyone with that secret can write any tenant's
+Firestore config — a known limitation tracked in `SECURITY_BACKLOG.md`.
+For now, never embed the secret in checked-in source outside that one
+file, and never email/Slack it.
+
+If `--paid` was passed, **skip this step entirely** and print:
+
+```
+Skipping trial timer (--paid). To flip later, POST to set_tenant_config
+with subscriptionStatus="active".
+```
+
+### 6a — idempotency pre-check (read-before-write)
+
+Read the existing Firestore config first. If `subscriptionStatus` is
+already `"trial"` or `"active"` for this tenant, **do not blindly
+overwrite** — re-running Step 6 would silently reset
+`trialStartDate`/`trialEndDate` to today and corrupt billing state.
+
+Use the same Python `firebase_admin` path the seed scripts use:
+
+```python
+import firebase_admin
+from firebase_admin import firestore
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(options={"projectId": "dataxcel-ai"})
+snap = (firestore.client()
+        .collection("tenants").document("<slug>")
+        .collection("config").document("main").get())
+existing = snap.to_dict() if snap.exists else {}
+print({k: existing.get(k) for k in
+       ("subscriptionStatus", "trialStartDate", "trialEndDate")})
+```
+
+If `existing.get("subscriptionStatus")` is `"trial"` or `"active"`,
+print the existing dates and confirm:
+
+> Tenant `<slug>` already has `subscriptionStatus=<existing>`,
+> trial=<start>..<end>. Overwrite with a NEW <N>-day trial starting
+> today? Typing `yes` resets the countdown — say `skip` to keep the
+> existing trial dates.
+
+On `skip`, jump to Step 7. On `yes`, proceed to 6b.
+
+(If the Firestore read fails — auth, network — print the error, ask
+"proceed without idempotency check? yes/no", and only proceed on
+explicit `yes`. Never silently skip the pre-check.)
+
+### 6b — compute dates portably (Python, not BSD `date`)
+
+Do NOT use `date -u -v+60d` (BSD-only) or `date -u -d "+60 days"`
+(GNU-only). Use Python so the skill works the same on macOS and Linux:
+
+```bash
+TRIAL_DAYS="<--trial-days N, default 60>"
+read TODAY TRIAL_END <<<"$(python3 -c "
+import datetime as dt
+t = dt.datetime.now(dt.timezone.utc).date()
+print(t.isoformat(), (t + dt.timedelta(days=$TRIAL_DAYS)).isoformat())
+")"
+test -n "$TODAY" -a -n "$TRIAL_END" || { echo "date math failed"; exit 1; }
+```
+
+Validate before showing the confirm prompt:
+- `TRIAL_DAYS` parses as a positive int (reject 0, negative, non-numeric).
+- `TRIAL_END > TODAY`.
+- Both dates print as `YYYY-MM-DD`.
+
+### 6c — confirm and POST (with real HTTP error handling)
+
+Show the prompt with the actual resolved dates and trial length:
+
+> Set <TRIAL_DAYS>-day trial timer for `<slug>`? trialStartDate=<TODAY>,
+> trialEndDate=<TRIAL_END>, subscriptionStatus=trial. Type `yes`.
+
+On `yes`, POST and **check the HTTP code AND parse the JSON body**.
+A 401, 5xx, or unexpected JSON shape must surface as a hard failure —
+not a silent success in the Step 9 summary:
+
+```bash
+RESP=$(mktemp)
+HTTP=$(curl -sS -o "$RESP" -w "%{http_code}" \
+  -X POST "https://set-tenant-config-b3yw34t2qq-uc.a.run.app" \
+  -H "Authorization: Bearer $BRIEFING_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"tenant_id\": \"<slug>\",
+    \"config\": {
+      \"subscriptionStatus\": \"trial\",
+      \"trialStartDate\": \"${TODAY}T00:00:00Z\",
+      \"trialEndDate\": \"${TRIAL_END}T00:00:00Z\"
+    }
+  }")
+
+if [ "$HTTP" != "200" ]; then
+  echo "FAIL: set_tenant_config returned HTTP $HTTP"
+  cat "$RESP"; rm "$RESP"; exit 1
+fi
+python3 -c "
+import json, sys
+r = json.load(open('$RESP'))
+assert r.get('status') == 'ok' and r.get('tenant_id') == '<slug>', r
+print('OK:', r)
+" || { echo "FAIL: bad JSON shape"; cat "$RESP"; rm "$RESP"; exit 1; }
+rm "$RESP"
+```
+
+`$BRIEFING_API_SECRET` must be exported in the shell before this step
+(read it from `dataxcel-ai-briefing/scripts/update_dashboard_links.py:14`,
+or from `dataxcel-ai-briefing/.env` if present). The skill MUST refuse
+to embed the literal secret in this SKILL.md or any other operator-facing
+doc — point operators at the source-of-truth file instead.
+
+### 6d — verify (read-back)
+
+After the POST returns OK, read the tenant config again and assert the
+three fields landed:
+
+```python
+snap = (firestore.client()
+        .collection("tenants").document("<slug>")
+        .collection("config").document("main").get())
+got = snap.to_dict()
+expected = {
+    "subscriptionStatus": "trial",
+    "trialStartDate": f"{TODAY}T00:00:00Z",
+    "trialEndDate":   f"{TRIAL_END}T00:00:00Z",
+}
+for k, v in expected.items():
+    assert got.get(k) == v, f"{k}: expected {v!r}, got {got.get(k)!r}"
+print("verified: trial countdown live for <slug>")
+```
+
+Only after the read-back assertion passes does Step 9's summary line
+print `Trial: <N>-day countdown set, expires <TRIAL_END>`.
+
+### Flipping trial → active later
+
+When the customer signs an annual subscription, POST again with
+`"subscriptionStatus": "active"` (and optionally clear the trial dates
+if you want the banner gone). There is no SKU-to-Firestore automation —
+this is a manual flip. Same idempotency pre-check applies.
+
+## Step 7 — wire the weekly DAG (LOCAL edit, no confirm)
 
 Open `metabase-migration/metabase_customer_audit/airflow/customer_ceo_briefing_dag.py`.
 Locate `CUSTOMER_COMMANDS = {` at line ~73. Add:
@@ -266,7 +422,7 @@ Validate:
 python3 -c "import ast; ast.parse(open('/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/metabase-migration/metabase_customer_audit/airflow/customer_ceo_briefing_dag.py').read())"
 ```
 
-## Step 7 — commit + push (RISKY — confirm each)
+## Step 8 — commit + push (RISKY — confirm each)
 
 Three separate repos. Show the user the three commit messages, then ask:
 
@@ -302,12 +458,13 @@ The parent repo will show the two submodules as modified after their
 pushes — bump submodule pointers in a final parent-repo commit if your
 workflow tracks them.
 
-## Step 8 — summary + next step
+## Step 9 — summary + next step
 
 ```
 Customer: <slug>
 Metabase iframe: installed (dashcard <dashcard-id> on D<dashboard-id>)
 First briefing push: ok — https://ai.xcel.report/briefing/<slug>?token=...
+Trial: <60-day countdown set, expires YYYY-MM-DD | --paid, no trial>
 Weekly DAG: registered (next run Monday 6 AM UTC)
 Commits + pushes: done (3 repos)
 
