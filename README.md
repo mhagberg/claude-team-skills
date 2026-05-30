@@ -15,6 +15,7 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 | `/onboard-customer-postcall <slug>` | Post-call wiring (~15 min after the call): fills `profiles.yml` with the real NetBird IP / SQL port / Sage DB / dataxcel password (from CLI flags OR by reading the customer table the on-call skill just wrote), pushes `single_customers.py`, triggers the dbt DAG, adds Metabase DB + schema sync, clones the dashboard seed-set. Optional flags: `--netbird-ip`, `--sql-port`, `--sage-db`, `--dataxcel-pw`. |
 | `/onboard-customer-hub <slug>` | Provision the Dashboard Hub: wraps `register_tenant.py` (TENANT_INSTANCES + Firestore + JWT + iframe install). |
 | `/onboard-customer-briefing <slug>` | Provision the CEO AI Briefing. **Default: 60-day trial countdown.** Pass `--paid` for paid customers (no trial), or `--trial-days N` to override the default 60. |
+| `/onboard-customer-wth347 <slug>` | Install/refresh the per-customer signed-URL iframe for the WTH-347 Davis-Bacon certified-payroll app on the customer's Metabase WH-347 dashboard. **🛑 CURRENTLY BLOCKED** — per-customer signed-URL infrastructure is `wth-347-davis-bacon` Phase 6 work and has not shipped yet; the skill verifies the dashboard exists, reports the current demo URL, and exits with a BLOCKED banner instead of pretending the install worked. Re-run once Phase 6 ships and `install_wth347_iframe.py` exists. |
 | `/configure-customer-metabase <slug>` | **Configure-the-tenant step — runs after `/onboard-customer-hub`, before any validation.** Sets site name, site URL (HTTPS), report timezone (IANA, default `America/Boise`), email From Name + Reply-To, iframe allowlist (`board`, `home`, `ai`, `metagent.app`), custom-homepage-dashboard = `Dashboard Report Menu`, and archives leftover demo users (`Corbin Taylor`, `DataXcel PlayGround User`, `Julie Allen`, `Randy Fullmer`, `playground@xcel.software`, plus anything else not on the keep-allowlist). **The AI agent does all of this automatically using the shared `single.xcel.report` Metabase API key.** Each write requires `yes`. |
 | `/validate-hub-dashboards <slug>` | **Gate AFTER `/configure-customer-metabase`, BEFORE `/validate-customer-metabase`.** Health-checks every dashboard the Dashboard Hub will surface — executes every card via the Metabase REST API, reports pass / empty (warn) / failing. Mirrors the production `check_dashboard_health` Cloud Function. Catches Hallowell-style stale-field-id failure modes. Read-only. |
 | `/validate-customer-metabase <slug>` | **Gate before users get access.** Runs every available Metabase-vs-Sage validator (Balance Sheet, Income Statement / Cash Basis 51-test pytest, AR/AP Aging, `posting_date` filter coverage) within `--tolerance`. Read-only. Refuses to print a `Next:` pointer if any validator fails — Mike's hard rule (2026-05-29): "we need to make sure the numbers validate against the Sage reports before we add the users and give them access." |
@@ -96,10 +97,23 @@ which the live-call skill updates as soon as IT reports them.
    `/onboard-customer-briefing <slug>`
    (pass `--paid` for a customer who has purchased the briefing outright,
    or `--trial-days N` to override the default 60.)
-9. **Finalize the Metabase tenant** (invites the customer's users). Hard
-   prerequisite: steps 5, 6, and 7 must all have passed.
-   `/finalize-customer-metabase <slug> --users <email1>,<email2> [--admin-users ...]`
-10. **Register the customer on the daily status page** (last step of the
+9. **Install the WTH-347 Davis-Bacon per-customer signed-URL iframe**
+   (when the customer has the WH-347 certified-payroll dashboard):
+   `/onboard-customer-wth347 <slug>`
+   **🛑 CURRENTLY BLOCKED — per-customer signed-URL infra has not shipped
+   yet** (wth-347-davis-bacon is pre-Phase-1). The skill verifies the
+   dashboard, reports the current shared-demo URL, and exits without
+   mutating anything. Once `wth-347-davis-bacon` Phase 6 ships and
+   `install_wth347_iframe.py` lives in
+   `dataxcel-board-reports-pipeline/scripts/` (modelled after the briefing
+   installer), this step will mint a per-customer signed URL and swap the
+   demo iframe for it. **Until then every real customer's WH-347
+   dashboard iframes the shared `wth347-demo.web.app` demo URL** — do not
+   pretend otherwise.
+10. **Finalize the Metabase tenant** (invites the customer's users). Hard
+    prerequisite: steps 5, 6, and 7 must all have passed.
+    `/finalize-customer-metabase <slug> --users <email1>,<email2> [--admin-users ...]`
+12. **Register the customer on the daily status page** (last step of the
     canonical sequence — makes the customer visible on
     `https://customers.xcel.report`):
     `/register-customer-status-page <slug>`
@@ -112,7 +126,7 @@ which the live-call skill updates as soon as IT reports them.
     pushes a feature branch, and triggers a one-off
     `customer_report_dag` run so the new row appears tonight instead of
     tomorrow.
-11. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
+13. **Optional — flip snapshots later:** `/customer-snapshots <slug>`
     (pre-call already defaults new customers to `snapshots=True`; only use this
     to flip an existing customer).
 
