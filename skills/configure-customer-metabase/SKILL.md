@@ -264,7 +264,7 @@ site-url                        <current>                        <target>       
 report-timezone                 <current>                        <target>                        OK / WRONG
 email-from-name                 <current>                        DataXcel Support                OK / WRONG
 email-reply-to                  <current>                        ["support@xcel.software"]       OK / WRONG
-admin-email                     <current>                        scline@xcel.software            OK / WRONG
+admin-email                     <current>                        support@xcel.software            OK / WRONG
 allowed-iframe-hosts            <current, truncated>             <merged>                        OK / NEEDS-MERGE
 custom-homepage-dashboard       <current id> (<name>)            <Dashboard Report Menu id>      OK / WRONG / MISSING
 Users found                     <N total>                        (inventory only)                —
@@ -333,7 +333,7 @@ PUT <metabase-url>/api/setting/email-reply-to
 
 ### 4.6 admin-email
 
-Target = literal string `scline@xcel.software`. Hard-coded — not a flag.
+Target = literal string `support@xcel.software`. Hard-coded — not a flag.
 This is the Metabase admin → Settings → General → Email → "Email address
 for help requests" field. It's the address Metabase shows users in error
 pages and "contact your admin" links. Stan Cline is the canonical admin —
@@ -342,14 +342,14 @@ purge protects this address from deactivation).
 
 ```
 PUT <metabase-url>/api/setting/admin-email
-{"value": "scline@xcel.software"}
+{"value": "support@xcel.software"}
 ```
 
 Verify with a GET:
 
 ```
 GET <metabase-url>/api/setting/admin-email
-→ assert response == "scline@xcel.software"
+→ assert response == "support@xcel.software"
 ```
 
 ### 4.7 allowed-iframe-hosts
@@ -418,7 +418,7 @@ Use the user list from Step 3.
 Hard-coded Xcel team — case-insensitive match:
 
 - `mhagberg@xcel.software`
-- `scline@xcel.software`
+- `support@xcel.software`
 - `tburningham@xcel.software`
 
 Plus the `.jobxcel.ai` aliases for the same humans (treat the two domains
@@ -497,7 +497,7 @@ site-url                        OK (https://lunstrum.xcel.report)
 report-timezone                 OK (America/Boise)
 email-from-name                 OK (DataXcel Support)
 email-reply-to                  OK (["support@xcel.software"])
-admin-email                     OK (scline@xcel.software)
+admin-email = support@xcel.software)
 allowed-iframe-hosts            OK (board, home, ai, metagent present)
 custom-homepage-dashboard       OK (id=42 "Dashboard Report Menu")
 
