@@ -159,6 +159,65 @@ The printed URL MUST start with `https://<slug>.xcel.report/` (not
 pick up the tenant — re-verify `TENANT_INSTANCES` was deployed in
 Step 4.
 
+## Step 5.5 — verify the iframe on D94 points at the RIGHT tenant (Lunstrum gotcha #1)
+
+**This is the bug that cost us hours during Lunstrum's onboarding
+(2026-05-31).** When the Metabase tenant is cloned from `single`, the
+customer's homepage dashboard (D94) carries any Hub iframe dashcards
+from the template VERBATIM — including the `single` JWT in the URL.
+The Hub SPA reads `tenants/single/installed/current` (demo data) so
+EVERY dashboard tile click sends the user to `demo.xcel.report`.
+
+`install_hub_iframe.py` previously did not detect this (the check was
+"does an iframe matching `/hub/<this-tenant>` exist?" — a `/hub/single`
+iframe on a Lunstrum dashboard returned False, so the installer added
+a NEW iframe... except install_hub_iframe also tends to skip on prior
+errors).
+
+**Verify, every time, after Hub provisioning:**
+
+```bash
+KEY="mb_OtooFk7pInjCBF9EzZb4sT/9wsXCXWIJOCAdCbA2blw="
+curl -s -H "x-api-key: $KEY" "https://<slug>.xcel.report/api/dashboard/94" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for c in d.get('dashcards', []):
+    iframe = (c.get('visualization_settings') or {}).get('iframe') or ''
+    if 'home.xcel.report' in iframe:
+        if f'/hub/<slug>' in iframe:
+            print(f'  ✓ dc={c[\"id\"]} correct tenant')
+        else:
+            print(f'  ✗ dc={c[\"id\"]} WRONG TENANT: {iframe[:120]}')"
+```
+
+If you see ✗, run:
+
+```bash
+cd dataxcel-dashboard-hub
+python functions/install_hub_iframe.py <slug>
+# Expected status: "repaired" (new code path added 2026-05-31:
+#   find_wrong_tenant_hub() detects the bad iframe, rewrites it in
+#   place with a fresh JWT + `&v=<ts>` cache-buster)
+```
+
+## Step 5.6 — iframe cache is nearly impossible to break with redeploys alone (Lunstrum gotcha #2)
+
+After redeploying the Hub SPA (`firebase deploy --only hosting`), the
+browser does NOT pick up the new bundle inside an existing Metabase
+iframe — even with hard refresh, even in incognito.
+Service-worker caching + Firestore IndexedDB persistence + iframe
+caching all combine to lock the iframe to whatever bundle it first
+loaded.
+
+**The only reliable way to force a fresh load is to change the iframe
+URL itself.** Append `&v=<timestamp>` and PUT the dashcard with the new
+src. The browser sees a new URL and bypasses every layer of cache.
+
+`install_hub_iframe.py`'s repair path now does this automatically.
+For ad-hoc fixes outside the installer, the snippet in playbook §A.6.8
+shows the bare PUT.
+
 ## Step 6 — commit + push hub changes (RISKY — confirm push)
 
 Confirm:
