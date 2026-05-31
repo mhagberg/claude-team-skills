@@ -39,7 +39,30 @@ defaults. Only prompt if the slug fails the regex.
 
 Print a one-line plan summary with all resolved values.
 
-## Step 2 — run register_tenant.py (RISKY — confirm)
+## Step 2 — preflight: gcloud ADC + Firebase login
+
+`register_tenant.py` writes to Firestore using google-cloud-firestore,
+which requires Application Default Credentials. The deploy step (Step 4)
+uses the Firebase CLI. Both can be expired and there's no good error
+message if so — the script reports "Firestore write failed" only after a
+60-second hang.
+
+Tell the user:
+
+> Confirm gcloud ADC + Firebase CLI are authed for project `dataxcel-hub`?
+> Quick check — type `! gcloud auth application-default print-access-token`
+> in the prompt. If it prints a token, ADC is fresh. If it errors with
+> "reauthentication needed", run:
+>     ! gcloud auth application-default login
+> Then for Firebase:
+>     ! firebase login --reauth     (only if Step 4 fails)
+
+Don't proceed until ADC is fresh. Lunstrum 2026-05-30: I (Claude) ran
+register_tenant.py with stale ADC, got a 60s timeout on the Firestore
+write, and the script half-completed (TENANT_INSTANCES updated, Firestore
+config NOT written) — then we had to re-run after the user reauth'd.
+
+## Step 3 — run register_tenant.py (RISKY — confirm)
 
 Confirm:
 
@@ -72,7 +95,71 @@ Show the script's stdout to the user verbatim (it prints the iframe URL and
 the install_hub_iframe.py outcome). If the script exits non-zero, stop and
 print the traceback — do NOT push the partial state.
 
-## Step 3 — commit + push hub changes (RISKY — confirm push)
+## Step 4 — deploy Cloud Functions so the new TENANT_INSTANCES is live (RISKY — confirm)
+
+**THIS STEP USED TO BE MISSING AND IS THE MAIN REASON LUNSTRUM SHOWED
+SINGLE.XCEL.REPORT URLS FOR 24 HOURS.** `register_tenant.py` edits
+`functions/main.py` locally, but the deployed Cloud Function still uses
+the OLD `TENANT_INSTANCES` until you redeploy.
+
+Symptom when this step is skipped: the Hub iframe loads on the customer
+Metabase, but the SPA shows demo dashboards (with `demo.xcel.report` /
+`single.xcel.report` URLs) because:
+
+  - `tenants/<slug>/installed/current` is empty (sync_usage_data
+    doesn't know about the new tenant)
+  - the SPA falls back to popular dashboards from `system/popularity`,
+    which all carry demo public-preview URLs
+
+Confirm:
+
+> Deploy the Hub Cloud Functions so the new tenant `<slug>` is included
+> in the next `sync_usage_data` run? This updates all 5 functions
+> (`sync_usage_data`, `check_dashboard_health`, `validate_token`,
+> `set_tenant_config`, `on_new_event`). Idempotent — same code, just
+> picks up the new `TENANT_INSTANCES` entry. Type `yes`.
+
+On `yes`:
+
+```bash
+cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/dataxcel-dashboard-hub
+firebase deploy --only functions --project dataxcel-hub --force
+```
+
+## Step 5 — trigger sync immediately (optional but recommended)
+
+`sync_usage_data` runs daily at 06:00 Mountain Time. If you want
+`<slug>` to populate in the Hub today instead of tomorrow morning,
+force-run via Cloud Scheduler:
+
+```bash
+gcloud scheduler jobs run firebase-schedule-sync_usage_data-us-central1 \
+  --location=us-central1 --project=dataxcel-hub
+```
+
+If gcloud auth misbehaves in the shell, fall back to the Firebase
+console: Cloud Scheduler → `firebase-schedule-sync_usage_data-us-central1`
+→ "Force run". Takes ~3-5 minutes across all tenants.
+
+After the sync completes, verify `tenants/<slug>/installed/current`
+contains the customer's actual dashboards (not demo dashboards):
+
+```bash
+# Quick check — should print the customer's metabase URL
+python3 -c "
+from google.cloud import firestore
+db = firestore.Client(project='dataxcel-hub')
+doc = db.collection('tenants').document('<slug>').collection('installed').document('current').get()
+d = (doc.to_dict() or {}).get('dashboards', [])
+print(f'{len(d)} dashboards; first URL: {d[0][\"metabaseUrl\"] if d else \"none\"}')"
+```
+
+The printed URL MUST start with `https://<slug>.xcel.report/` (not
+`demo.xcel.report` or `single.xcel.report`). If it doesn't, sync didn't
+pick up the tenant — re-verify `TENANT_INSTANCES` was deployed in
+Step 4.
+
+## Step 6 — commit + push hub changes (RISKY — confirm push)
 
 Confirm:
 
@@ -92,7 +179,7 @@ git -C "$SUBMODULE" push
 If there are other dirty files in the submodule, ask the user before staging
 broader. Default = stage only the two files above.
 
-## Step 4 — summary + next step
+## Step 7 — summary + next step
 
 ```
 Customer: <slug>
