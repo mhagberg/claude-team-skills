@@ -41,11 +41,11 @@ POSTHOG_HOST = "https://us.posthog.com"
 POSTHOG_PROJECT_ID = 425826
 POSTHOG_KEY_PATH = Path.home() / ".secrets" / "posthog-personal-api-key"
 
-LINEAR_KEY_PATH = Path.home() / ".secrets" / "linear-api-key"
-LINEAR_PROJECT_MATCH = "sage"             # SageXcel project (containsIgnoreCase)
-# ⚠️ label split: Data Inaccuracies = issues whose label matches one of these;
-#    Pending Reports = the remaining not-done issues in the cycle.
-LINEAR_INACCURACY_LABELS = ["inaccurac", "bug", "data"]
+LINEAR_KEY_PATH = Path.home() / ".secrets" / "linear-api-key"  # fallback; env LINEAR_API_KEY wins
+LINEAR_TEAM_KEY = "SAG"                    # SageXcel team (NOT a project)
+# Data Inaccuracies = not-done issues labeled with any of these; Pending Reports
+# = the remaining not-done issues in the active cycle.
+LINEAR_INACCURACY_LABELS = ["bug", "inaccurac"]
 
 PARENT = Path("/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting")
 
@@ -105,11 +105,23 @@ def m_odoo_page_views(s, e):
     raise RuntimeError("website.track unavailable")
 
 def m_quotations(s, e):
-    so = oex("sale.order", "search_read",
-             [("company_id", "=", ODOO_COMPANY_ID), ("state", "in", ["sent", "sale", "done"]),
-              ("create_date", ">=", s), ("create_date", "<=", e + " 23:59:59")],
-             ["amount_total"])
-    return (len(so), round(sum(o["amount_total"] for o in so), 2)), "Odoo sale.order"
+    # DataXcel quotes created in the window (any non-cancelled state). A quote is
+    # "DataXcel" when at least one line carries a DataXcel-named product
+    # (excludes generic dev/bidding quotes like Custom Software Development Hours).
+    src = "Odoo sale.order (DataXcel quotes)"
+    cand = oex("sale.order", "search_read",
+               [("company_id", "=", ODOO_COMPANY_ID), ("state", "!=", "cancel"),
+                ("create_date", ">=", s), ("create_date", "<=", e + " 23:59:59")],
+               ["id", "amount_total"])
+    if not cand:
+        return (0, 0.0), src
+    ids = [c["id"] for c in cand]
+    dx = oex("sale.order.line", "search_read",
+             [("order_id", "in", ids), ("product_id.name", "ilike", "DataXcel")],
+             ["order_id"])
+    dx_ids = {l["order_id"][0] for l in dx}
+    dollars = sum(c["amount_total"] for c in cand if c["id"] in dx_ids)
+    return (len(dx_ids), round(dollars, 2)), src
 
 def m_hours_billed(s, e):
     # posted customer invoices in window; exclude subscription (recurring) product lines
@@ -118,18 +130,19 @@ def m_hours_billed(s, e):
                 ("state", "=", "posted"), ("invoice_date", ">=", s), ("invoice_date", "<=", e)],
                ["id"])
     ids = [i["id"] for i in invs]
+    src = "Odoo invoices (hourly dev work)"
     if not ids:
-        return (0, 0.0), "Odoo invoices (dev, excl. subscriptions)"
+        return (0, 0.0), src
+    # hourly dev lines = product whose name contains "Hour" (Custom Software
+    # Development Hours, Odoo Development Hours). Excludes subscriptions/setup/hosting.
+    # NOTE Odoo 18 product lines have display_type='product' (NOT False).
     lines = oex("account.move.line", "search_read",
-                [("move_id", "in", ids), ("display_type", "=", False),
-                 ("product_id", "!=", False)],
-                ["quantity", "price_subtotal", "product_id"])
-    prod_ids = list({l["product_id"][0] for l in lines})
-    recurring = {p["id"] for p in oex("product.product", "search_read",
-                 [("id", "in", prod_ids), ("recurring_invoice", "=", True)], ["id"])}
-    hrs = sum(l["quantity"] for l in lines if l["product_id"][0] not in recurring)
-    amt = sum(l["price_subtotal"] for l in lines if l["product_id"][0] not in recurring)
-    return (round(hrs, 1), round(amt, 2)), "Odoo invoices (dev, excl. subscriptions)"
+                [("move_id", "in", ids), ("display_type", "=", "product"),
+                 ("product_id.name", "ilike", "Hour")],
+                ["quantity", "price_subtotal"])
+    hrs = sum(l["quantity"] for l in lines)
+    amt = sum(l["price_subtotal"] for l in lines)
+    return (round(hrs, 1), round(amt, 2)), src
 
 def _ga_client():
     from google.analytics.data_v1beta import BetaAnalyticsDataClient
@@ -176,7 +189,7 @@ def m_posthog(s, e):
     return (views, avg), "PostHog"
 
 def _linear(q):
-    key = LINEAR_KEY_PATH.read_text().strip()
+    key = os.environ.get("LINEAR_API_KEY") or LINEAR_KEY_PATH.read_text().strip()
     req = urllib.request.Request("https://api.linear.app/graphql",
         data=json.dumps({"query": q}).encode(),
         headers={"Authorization": key, "Content-Type": "application/json"})
@@ -190,17 +203,17 @@ def _linear(q):
 
 def m_linear_dev():
     """Returns (pending_reports, data_inaccuracies) — not-done issues in the
-    current cycle of the SageXcel project, split by label."""
-    d = _linear('{ projects(filter:{name:{containsIgnoreCase:"%s"}}){ nodes { id name } } }'
-                % LINEAR_PROJECT_MATCH)
-    nodes = d["projects"]["nodes"]
+    SageXcel TEAM's active cycle. Data Inaccuracies = Bug-labeled; Pending
+    Reports = the rest."""
+    d = _linear('{ teams(filter:{key:{eq:"%s"}}){ nodes { id } } }' % LINEAR_TEAM_KEY)
+    nodes = d["teams"]["nodes"]
     if not nodes:
-        raise RuntimeError("SageXcel project not found")
-    pid = nodes[0]["id"]
-    d = _linear('{ project(id:"%s"){ issues(filter:{state:{type:{nin:["completed","canceled"]}},'
-                'cycle:{isActive:{eq:true}}}, first:250){ nodes { id title labels{ nodes{ name } } } } } }'
-                % pid)
-    issues = d["project"]["issues"]["nodes"]
+        raise RuntimeError("SageXcel team not found")
+    tid = nodes[0]["id"]
+    d = _linear('{ team(id:"%s"){ issues(filter:{state:{type:{nin:["completed","canceled"]}},'
+                'cycle:{isActive:{eq:true}}}, first:250){ nodes { id labels{ nodes{ name } } } } } }'
+                % tid)
+    issues = d["team"]["issues"]["nodes"]
     inacc = [i for i in issues if any(any(t in l["name"].lower() for t in LINEAR_INACCURACY_LABELS)
                                       for l in i["labels"]["nodes"])]
     return (len(issues) - len(inacc), len(inacc)), "Linear (SageXcel active cycle, not done)"
@@ -241,104 +254,138 @@ def fmt(v):
         return f"{v:,}"
     return str(v)
 
+def _num(v):
+    """(raw, pretty) for a count/number — raw is paste-clean (no commas)."""
+    if isinstance(v, float):
+        if v == int(v):
+            return str(int(v)), f"{int(v):,}"
+        return f"{v:.1f}", f"{v:,.1f}"
+    return str(int(v)), f"{int(v):,}"
+
+def _money(v):
+    raw = str(int(v)) if v == int(v) else f"{v:.2f}"
+    return raw, f"${v:,.2f}"
+
 def build_rows(s, e, demos, pending_override, inacc_override):
-    R = []  # (category, metric, value_str, source, ok)
-    def add(cat, metric, res, err, suffix=""):
+    """Returns (rows, extras). rows = the 13 scorecard rows in Mike's EXACT order
+    and labels: (category, metric, raw_value, pretty_value, source, ok).
+    extras = supplementary PostHog figures (not in the canonical 13)."""
+    nql, e1 = safe(m_new_qualified_leads, s, e)
+    ref, e2 = safe(m_referrals, s, e)
+    opv, e3 = safe(m_odoo_page_views, s, e)
+    ga, e4 = safe(m_ga, s, e)            # ((pv, eng), src)
+    ph, e5 = safe(m_posthog, s, e)       # ((pv, eng), src)
+    hb, e6 = safe(m_hours_billed, s, e)  # ((hrs, $), src)
+    quo, e7 = safe(m_quotations, s, e)   # ((cnt, $), src)
+    lin, e8 = safe(m_linear_dev)         # ((pending, inacc), src)
+    paid, e9 = safe(m_paid_users, s, e)
+
+    NA = ("N/A", "N/A")
+    def n(res, err, idx=None, fn=_num):
         if err:
-            R.append((cat, metric, f"N/A — {err}", "", False))
-        else:
-            val, src = res
-            R.append((cat, metric, fmt(val) + suffix, src, True))
+            return NA + ("", False)
+        val, src = res
+        if idx is not None:
+            val = val[idx]
+        raw, pretty = fn(val)
+        return raw, pretty, src, False if err else True
 
-    add("Sales", "New Qualified Leads", *safe(m_new_qualified_leads, s, e))
-    add("Sales", "# of Referrals", *safe(m_referrals, s, e))
-    # demos from agent / GCal
+    rows = []
+    rows.append(("DataXcel Sales", "New Qualified Leads", *n(nql, e1)))
+    rows.append(("DataXcel Sales", "# of referrals", *n(ref, e2)))
+    rows.append(("Odoo page Views", "Number of views", *n(opv, e3)))
+    rows.append(("DataXcel GA Page Views", "GA Number of Page Views", *n(ga, e4, 0)))
+    rows.append(("DataXcel GA", "Avg Engagement time per active user in Seconds", *n(ga, e4, 1)))
     if demos is None:
-        R.append(("Sales", "Number of Demos", "N/A — pass --demos from GCal", "", False))
+        rows.append(("DataXcel Sales", "Number of Demos", "N/A", "N/A", "", False))
     else:
-        R.append(("Sales", "Number of Demos", fmt(demos), "Google Calendar", True))
-    q, qe = safe(m_quotations, s, e)
-    if qe:
-        R.append(("Sales", "Quotations Sent (#)", f"N/A — {qe}", "", False))
-        R.append(("Sales", "Quotations Sent ($)", f"N/A — {qe}", "", False))
+        r, p = _num(demos)
+        rows.append(("DataXcel Sales", "Number of Demos", r, p, "Google Calendar", True))
+    rows.append(("DataXcel Sales", "Hours Billed (#)", *n(hb, e6, 0)))
+    rows.append(("DataXcel Sales", "Hours Billed ($)", *n(hb, e6, 1, _money)))
+    # Pending Reports (Linear, or manual override)
+    if pending_override is not None:
+        r, p = _num(pending_override)
+        rows.append(("DataXcel Development", "Pending Reports", r, p, "manual", True))
     else:
-        (cnt, dollars), src = q
-        R.append(("Sales", "Quotations Sent (#)", fmt(cnt), src, True))
-        R.append(("Sales", "Quotations Sent ($)", "$" + fmt(round(dollars, 2)), src, True))
-    h, he = safe(m_hours_billed, s, e)
-    if he:
-        R.append(("Sales", "Hours Billed (#)", f"N/A — {he}", "", False))
-        R.append(("Sales", "Hours Billed ($)", f"N/A — {he}", "", False))
+        rows.append(("DataXcel Development", "Pending Reports", *n(lin, e8, 0)))
+    rows.append(("DataXcel Sales", "Quotations Sent (#)", *n(quo, e7, 0)))
+    rows.append(("DataXcel Sales", "Quotations Sent ($)", *n(quo, e7, 1, _money)))
+    if inacc_override is not None:
+        r, p = _num(inacc_override)
+        rows.append(("DataXcel Development", "Data inaccuracies Reported", r, p, "manual", True))
     else:
-        (hrs, amt), src = h
-        R.append(("Sales", "Hours Billed (#)", fmt(hrs), src, True))
-        R.append(("Sales", "Hours Billed ($)", "$" + fmt(round(amt, 2)), src, True))
+        rows.append(("DataXcel Development", "Data inaccuracies Reported", *n(lin, e8, 1)))
+    rows.append(("DataXcel", "Paid Logged in Users/Week", *n(paid, e9)))
 
-    add("Marketing", "Odoo Page Views", *safe(m_odoo_page_views, s, e))
-    ga, gae = safe(m_ga, s, e)
-    if gae:
-        R.append(("Marketing", "GA Page Views", f"N/A — {gae}", "", False))
-        R.append(("Marketing", "GA Avg Engagement / user (s)", f"N/A — {gae}", "", False))
-    else:
-        (pv, avg), src = ga
-        R.append(("Marketing", "GA Page Views", fmt(pv), src, True))
-        R.append(("Marketing", "GA Avg Engagement / user (s)", fmt(avg) + "s", src, True))
-    ph, phe = safe(m_posthog, s, e)
-    if phe:
-        R.append(("Marketing", "PostHog Page Views", f"N/A — {phe}", "", False))
-        R.append(("Marketing", "PostHog Avg Engagement (s)", f"N/A — {phe}", "", False))
+    extras = []
+    if e5:
+        extras.append(("PostHog Page Views", "N/A", "", False))
+        extras.append(("PostHog Avg Engagement (s)", "N/A", "", False))
     else:
         (pv, avg), src = ph
-        R.append(("Marketing", "PostHog Page Views", fmt(pv), src, True))
-        R.append(("Marketing", "PostHog Avg Engagement (s)", fmt(avg) + "s", src, True))
+        extras.append(("PostHog Page Views", _num(pv)[1], src, True))
+        extras.append(("PostHog Avg Engagement (s)", _num(avg)[1], src, True))
+    return rows, extras
 
-    dev, deve = safe(m_linear_dev)
-    if pending_override is not None or inacc_override is not None:
-        R.append(("Development", "Pending Reports",
-                  fmt(pending_override) if pending_override is not None else "N/A", "manual", pending_override is not None))
-        R.append(("Development", "Data Inaccuracies Reported",
-                  fmt(inacc_override) if inacc_override is not None else "N/A", "manual", inacc_override is not None))
-    elif deve:
-        R.append(("Development", "Pending Reports", f"N/A — {deve}", "", False))
-        R.append(("Development", "Data Inaccuracies Reported", f"N/A — {deve}", "", False))
-    else:
-        (pend, inacc), src = dev
-        R.append(("Development", "Pending Reports", fmt(pend), src, True))
-        R.append(("Development", "Data Inaccuracies Reported", fmt(inacc), src, True))
-
-    add("Usage", "Paid Logged-in Users / Week", *safe(m_paid_users, s, e))
-    return R
-
-CAT_COLOR = {"Sales": "#0b5fff", "Marketing": "#7c3aed", "Development": "#0891b2", "Usage": "#16a34a"}
-
-def render_html(rows, s, e):
-    cats = {}
-    for cat, metric, val, src, ok in rows:
-        cats.setdefault(cat, []).append((metric, val, src, ok))
-    blocks = []
-    for cat, items in cats.items():
-        c = CAT_COLOR.get(cat, "#334155")
-        trs = "".join(
-            f'<tr><td style="padding:11px 14px;border-bottom:1px solid #eef2f6;">{m}</td>'
-            f'<td align="right" style="padding:11px 14px;border-bottom:1px solid #eef2f6;font-weight:700;'
-            f'{"color:#b91c1c;font-weight:500;font-size:12px;" if not ok else f"color:{c};"}">{v}</td>'
-            f'<td style="padding:11px 14px;border-bottom:1px solid #eef2f6;color:#8a94a6;font-size:11px;">{src}</td></tr>'
-            for m, v, src, ok in items)
-        blocks.append(
-            f'<div style="margin:0 0 22px;"><div style="background:{c};color:#fff;padding:9px 14px;'
-            f'border-radius:8px 8px 0 0;font-weight:700;font-size:14px;">{cat}</div>'
-            f'<table width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e6ebf2;'
-            f'border-top:none;border-radius:0 0 8px 8px;font-size:14px;">{trs}</table></div>')
+def render_html(rows, extras, s, e):
+    # 1) Copy/paste table — Category | Metric | Value, in exact order, plain.
+    cp = "".join(
+        f'<tr><td style="border:1px solid #d6dde6;padding:6px 10px;">{cat}</td>'
+        f'<td style="border:1px solid #d6dde6;padding:6px 10px;">{metric}</td>'
+        f'<td style="border:1px solid #d6dde6;padding:6px 10px;">{raw}</td></tr>'
+        for cat, metric, raw, pretty, src, ok in rows)
+    # 2) Pretty table
+    pretty_rows = "".join(
+        f'<tr><td style="padding:11px 14px;border-bottom:1px solid #eef2f6;color:#52606d;font-size:12px;">{cat}</td>'
+        f'<td style="padding:11px 14px;border-bottom:1px solid #eef2f6;">{metric}</td>'
+        f'<td align="right" style="padding:11px 14px;border-bottom:1px solid #eef2f6;font-weight:700;'
+        f'{"color:#b91c1c;font-weight:500;" if not ok else "color:#0b5fff;"}">{pretty}</td></tr>'
+        for cat, metric, raw, pretty, src, ok in rows)
+    extra_rows = "".join(
+        f'<tr><td style="padding:9px 14px;border-bottom:1px solid #eef2f6;color:#7c3aed;font-size:12px;">PostHog (extra)</td>'
+        f'<td style="padding:9px 14px;border-bottom:1px solid #eef2f6;">{m}</td>'
+        f'<td align="right" style="padding:9px 14px;border-bottom:1px solid #eef2f6;font-weight:700;'
+        f'{"color:#b91c1c;font-weight:500;" if not ok else "color:#7c3aed;"}">{v}</td></tr>'
+        for m, v, src, ok in extras)
+    notes = "".join(
+        f"<li><b>{metric}</b>: {src}</li>"
+        for cat, metric, raw, pretty, src, ok in rows if ok and src)
+    na = [metric for cat, metric, raw, pretty, src, ok in rows if not ok]
+    na_html = ("<div style='background:#fef2f2;border:1px solid #f5c2c2;border-radius:8px;"
+               "padding:12px 16px;margin:18px 0;color:#9b1c1c;font-size:13px;'>"
+               "<b>Needs attention (N/A):</b> " + ", ".join(na) + "</div>") if na else ""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DataXcel L10 Scorecard — {s} to {e}</title></head>
 <body style="margin:0;background:#f4f6f8;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1f2933;">
-<div style="max-width:720px;margin:0 auto;padding:24px;">
-  <div style="background:#0b1f44;color:#fff;border-radius:12px;padding:24px 28px;margin-bottom:22px;">
+<div style="max-width:760px;margin:0 auto;padding:24px;">
+  <div style="background:#0b1f44;color:#fff;border-radius:12px;padding:22px 28px;margin-bottom:20px;">
     <div style="font-size:22px;font-weight:800;">DataXcel — L10 Scorecard</div>
     <div style="color:#9db8ff;font-size:14px;margin-top:4px;">Week of {s} → {e}</div>
   </div>
-  {''.join(blocks)}
+
+  <div style="font-size:13px;font-weight:700;color:#52606d;margin:0 0 6px;">📋 COPY / PASTE (select the table)</div>
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:13px;width:100%;background:#fff;margin-bottom:28px;">
+    <tr style="background:#eef2f7;font-weight:700;">
+      <td style="border:1px solid #d6dde6;padding:6px 10px;">Category</td>
+      <td style="border:1px solid #d6dde6;padding:6px 10px;">Metric</td>
+      <td style="border:1px solid #d6dde6;padding:6px 10px;">Value</td>
+    </tr>
+    {cp}
+  </table>
+
+  {na_html}
+
+  <div style="font-size:13px;font-weight:700;color:#52606d;margin:0 0 6px;">✨ SCORECARD</div>
+  <table width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e6ebf2;border-radius:8px;font-size:14px;background:#fff;">
+    {pretty_rows}{extra_rows}
+  </table>
+
+  <details style="margin-top:16px;font-size:12px;color:#52606d;">
+    <summary style="cursor:pointer;font-weight:600;">Sources</summary>
+    <ul style="margin:8px 0 0;padding-left:20px;">{notes}</ul>
+  </details>
   <div style="text-align:center;color:#9aa5b1;font-size:11px;margin-top:18px;">
     Generated by the L10-Score-Card-DataXcel skill</div>
 </div></body></html>"""
@@ -358,12 +405,12 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
-    rows = build_rows(a.start, a.end, a.demos, a.pending_reports, a.data_inaccuracies)
+    rows, extras = build_rows(a.start, a.end, a.demos, a.pending_reports, a.data_inaccuracies)
     out = a.out or str(Path.home() / "Downloads" / f"l10_scorecard_{a.start}_{a.end}.html")
-    Path(out).write_text(render_html(rows, a.start, a.end))
+    Path(out).write_text(render_html(rows, extras, a.start, a.end))
     summary = {"start": a.start, "end": a.end, "out": out,
-               "rows": [{"category": c, "metric": m, "value": v, "source": s, "ok": ok}
-                        for c, m, v, s, ok in rows]}
+               "rows": [{"category": c, "metric": m, "value": raw, "source": src, "ok": ok}
+                        for c, m, raw, pretty, src, ok in rows]}
     print(json.dumps(summary, indent=2) if a.json else f"Wrote {out}")
     miss = [r["metric"] for r in summary["rows"] if not r["ok"]]
     if miss:

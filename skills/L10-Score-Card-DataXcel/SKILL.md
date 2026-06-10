@@ -15,12 +15,12 @@ window is the **previous completed Mon–Sun** (override with `--start/--end`).
 | New Qualified Leads | Odoo CRM | opps created in window, qualified+ stage |
 | # of Referrals | Odoo CRM | leads created in window tagged ASG/RKL/Wright/CBS/ServerNova |
 | Number of Demos | **Google Calendar (you, via MCP)** | count demo events in window → pass `--demos N` |
-| Quotations Sent (#/$) | Odoo `sale.order` | sent/confirmed quotes created in window |
-| Hours Billed (#/$) | Odoo invoices | posted customer invoices, **excl. subscription lines** |
+| Quotations Sent (#/$) | Odoo `sale.order` | DataXcel quotes (a line's product name contains "DataXcel") created in window, non-cancelled |
+| Hours Billed (#/$) | Odoo invoices | posted customer-invoice lines on **hourly dev products** (product name contains "Hour") |
 | Odoo Page Views | Odoo `website.track` | tracked views in window |
-| GA Page Views / Avg Engagement | GA4 API | property 483003616, creds `~/.secrets/ga4-reader.json` |
-| PostHog Page Views / Avg Engagement | PostHog | project 425826, key `~/.secrets/posthog-personal-api-key` |
-| Pending Reports / Data Inaccuracies | Linear | SageXcel active cycle, not-done; key `~/.secrets/linear-api-key` |
+| GA Page Views / Avg Engagement | GA4 API | property 483003616, creds `~/.secrets/ga4-reader.json`. Engagement = site-wide avg/active user (GA "Total"), NOT the max page |
+| PostHog Page Views / Avg Engagement | PostHog | project 425826, key `~/.secrets/posthog-personal-api-key` (shown as "extra", not in the canonical 13) |
+| Pending Reports / Data Inaccuracies | Linear | **team SAG (SageXcel)** active cycle, not-done. Data Inaccuracies = Bug-labelled; Pending Reports = the rest |
 | Paid Logged-in Users/Week | Metabase RDS | `dataxcel-user-tracking` weekly-active customer users |
 
 ## Steps
@@ -52,7 +52,7 @@ window is the **previous completed Mon–Sun** (override with `--start/--end`).
 
 - `~/.secrets/ga4-reader.json` — GA4 service account
 - `~/.secrets/posthog-personal-api-key` — PostHog personal key
-- `~/.secrets/linear-api-key` — Linear personal key (raw, **no** `Bearer` prefix)
+- Linear key: `LINEAR_API_KEY` in the parent `.env` (this wins) or `~/.secrets/linear-api-key`. Raw key, **no** `Bearer` prefix. (A bad key returns HTTP 401 "not authenticated".)
 - Odoo creds via `odoo_bank_metabase_payroll_reporting/.env`
 - Metabase RDS creds via `dataxcel-user-tracking/config/instances.yaml`
 
