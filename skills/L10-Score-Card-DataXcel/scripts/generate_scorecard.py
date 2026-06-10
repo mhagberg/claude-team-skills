@@ -36,6 +36,9 @@ QUALIFIED_STAGE_IDS = [2, 130, 117, 118, 119, 3, 4]   # Qualified, Qualified(ema
 
 GA_PROPERTY = "483003616"
 GA_CREDS = str(Path.home() / ".secrets" / "ga4-reader.json")
+GA_WINDOW_DAYS = 28   # GA page-views/engagement use a trailing 28-day window
+                      # (matches Mike's GA "Pages and screens" report Total),
+                      # NOT the weekly window the other metrics use.
 
 POSTHOG_HOST = "https://us.posthog.com"
 POSTHOG_PROJECT_ID = 425826
@@ -158,10 +161,11 @@ def m_ga(s, e):
                  Metric(name="activeUsers")],
         date_ranges=[DateRange(start_date=s, end_date=e)])
     r = cli.run_report(req)
+    src = f"GA4 (trailing {GA_WINDOW_DAYS}d)"
     if not r.rows:
-        return (0, 0.0), "GA4"
+        return (0, 0.0), src
     pv, eng, users = (float(r.rows[0].metric_values[i].value) for i in range(3))
-    return (int(pv), round(eng / users, 1) if users else 0.0), "GA4"
+    return (int(pv), round(eng / users, 1) if users else 0.0), src
 
 def _posthog_query(hogql):
     key = POSTHOG_KEY_PATH.read_text().strip()
@@ -273,7 +277,9 @@ def build_rows(s, e, demos, pending_override, inacc_override):
     nql, e1 = safe(m_new_qualified_leads, s, e)
     ref, e2 = safe(m_referrals, s, e)
     opv, e3 = safe(m_odoo_page_views, s, e)
-    ga, e4 = safe(m_ga, s, e)            # ((pv, eng), src)
+    # GA uses a trailing 28-day window (matches Mike's GA report), not the week
+    ga_s = (datetime.strptime(e, "%Y-%m-%d").date() - timedelta(days=GA_WINDOW_DAYS - 1)).isoformat()
+    ga, e4 = safe(m_ga, ga_s, e)         # ((pv, eng), src)
     ph, e5 = safe(m_posthog, s, e)       # ((pv, eng), src)
     hb, e6 = safe(m_hours_billed, s, e)  # ((hrs, $), src)
     quo, e7 = safe(m_quotations, s, e)   # ((cnt, $), src)
