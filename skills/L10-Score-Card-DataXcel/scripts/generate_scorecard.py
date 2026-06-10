@@ -413,7 +413,9 @@ def main():
     ap.add_argument("--no-open", action="store_true", help="do NOT auto-open the HTML")
     a = ap.parse_args()
     rows, extras = build_rows(a.start, a.end, a.demos, a.pending_reports, a.data_inaccuracies)
-    out = a.out or str(Path.home() / "Downloads" / f"l10_scorecard_{a.start}_{a.end}.html")
+    # unique filename per run so the browser never shows a stale cached version
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out = a.out or str(Path.home() / "Downloads" / f"l10_scorecard_{a.start}_{a.end}_{stamp}.html")
     Path(out).write_text(render_html(rows, extras, a.start, a.end))
     if not a.no_open:
         import subprocess
