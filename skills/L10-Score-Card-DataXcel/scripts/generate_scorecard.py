@@ -52,6 +52,12 @@ LINEAR_INACCURACY_LABELS = ["bug", "inaccurac"]
 
 PARENT = Path("/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting")
 
+# Paid Logged-in Users: the customer Metabase DBs (AWS RDS) are NetBird-gated and
+# only answer from the broker. Run the query there over SSH. Broker = the Airflow
+# host (NetBird IP 100.67.235.51); the user-tracking repo is deployed at BROKER_DIR.
+BROKER_SSH = "mike@100.67.235.51"
+BROKER_DIR = "/home/mike/dataxcel-usage"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Env / Odoo
 # ─────────────────────────────────────────────────────────────────────────────
@@ -222,25 +228,34 @@ def m_linear_dev():
                                       for l in i["labels"]["nodes"])]
     return (len(issues) - len(inacc), len(inacc)), "Linear (SageXcel active cycle, not done)"
 
+_BROKER_WAU = r"""
+import yaml
+from collector.db import get_conn
+from collector.queries import get_weekly_active_users_customer
+cfg = yaml.safe_load(open('config/instances.yaml'))
+h = cfg['rds_host']; p = cfg.get('rds_port', 5432); t = 0
+for i in cfg.get('instances', []):
+    if '(Internal)' in str(i.get('customer', '')):
+        continue
+    try:
+        with get_conn(h, p, i['db'], i['user'], i['password']) as c:
+            t += len(get_weekly_active_users_customer(c, 7))
+    except Exception:
+        pass
+print('PAID_WAU=' + str(t))
+"""
+
 def m_paid_users(s, e):
-    """Weekly active customer users across paid Metabase instances."""
-    utp = PARENT / "dataxcel-user-tracking"
-    sys.path.insert(0, str(utp))
-    import yaml  # noqa
-    from collector.db import get_conn
-    from collector.queries import get_weekly_active_users_customer
-    cfg = yaml.safe_load((utp / "config" / "instances.yaml").read_text())
-    host = cfg["rds_host"]; port = cfg.get("rds_port", 5432)
-    total = 0
-    for inst in cfg.get("instances", []):
-        if "(Internal)" in str(inst.get("customer", "")):
-            continue
-        cm = get_conn(host, port, inst["db"], inst["user"], inst["password"])
-        # get_conn is a @contextmanager -> use with-block
-        with cm as conn:
-            rows = get_weekly_active_users_customer(conn, 7)
-            total += len(rows) if hasattr(rows, "__len__") else sum(1 for _ in rows)
-    return total, "Metabase RDS (weekly-active customer users)"
+    """Weekly-active customer users — run on the broker over SSH (the customer
+    Metabase RDS DBs are NetBird-gated and only answer from there)."""
+    import subprocess
+    cmd = ["ssh", "-o", "ConnectTimeout=12", "-o", "BatchMode=yes", BROKER_SSH,
+           f"cd {BROKER_DIR} && .venv/bin/python -"]
+    r = subprocess.run(cmd, input=_BROKER_WAU, capture_output=True, text=True, timeout=180)
+    for line in r.stdout.splitlines():
+        if line.startswith("PAID_WAU="):
+            return int(line.split("=", 1)[1]), "Metabase via broker (SSH, 7-day active)"
+    raise RuntimeError((r.stderr or r.stdout or "no PAID_WAU returned").strip().splitlines()[-1][:90])
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestration + HTML
@@ -339,6 +354,9 @@ def render_html(rows, extras, s, e):
         f'<td style="border:1px solid #d6dde6;padding:6px 10px;">{metric}</td>'
         f'<td style="border:1px solid #d6dde6;padding:6px 10px;">{raw}</td></tr>'
         for cat, metric, raw, pretty, src, ok in rows)
+    # 1b) Values-only column (one per line, exact order) — paste straight into
+    #     the L10 tool's value column.
+    vals_only = "\n".join(raw for cat, metric, raw, pretty, src, ok in rows)
     # 2) Pretty table
     pretty_rows = "".join(
         f'<tr><td style="padding:11px 14px;border-bottom:1px solid #eef2f6;color:#52606d;font-size:12px;">{cat}</td>'
@@ -378,6 +396,9 @@ def render_html(rows, extras, s, e):
     </tr>
     {cp}
   </table>
+
+  <div style="font-size:13px;font-weight:700;color:#52606d;margin:0 0 6px;">📎 VALUES ONLY (click box → ⌘A → copy → paste down your value column)</div>
+  <textarea readonly rows="{len(rows)}" onclick="this.select()" style="width:150px;font-family:ui-monospace,Menlo,monospace;font-size:14px;line-height:1.7;padding:10px 12px;border:1px solid #d6dde6;border-radius:8px;background:#fff;margin-bottom:28px;resize:vertical;">{vals_only}</textarea>
 
   {na_html}
 

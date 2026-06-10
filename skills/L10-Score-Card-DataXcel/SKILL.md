@@ -23,7 +23,7 @@ regardless (this is why GA ties to Mike's GA "Pages and screens" Total).
 | GA Page Views / Avg Engagement | GA4 API | property 483003616, creds `~/.secrets/ga4-reader.json`. **Trailing 28-day window** (`GA_WINDOW_DAYS`, matches Mike's GA "Pages and screens" report Total ≈437), NOT the weekly window. Engagement = site-wide avg/active user (GA "Total"), NOT the max page |
 | PostHog Page Views / Avg Engagement | PostHog | project 425826, key `~/.secrets/posthog-personal-api-key` (shown as "extra", not in the canonical 13) |
 | Pending Reports / Data Inaccuracies | Linear | **team SAG (SageXcel)** active cycle, not-done. Data Inaccuracies = Bug-labelled; Pending Reports = the rest |
-| Paid Logged-in Users/Week | Metabase RDS | `dataxcel-user-tracking` weekly-active customer users |
+| Paid Logged-in Users/Week | Metabase RDS **via broker over SSH** | RDS is NetBird-gated; the script SSHes `mike@100.67.235.51` (broker, NetBird IP) and runs the `dataxcel-user-tracking` weekly-active-customer query there. Needs NetBird up + SSH access. |
 
 ## Steps
 
@@ -76,3 +76,8 @@ regardless (this is why GA ties to Mike's GA "Pages and screens" Total).
 - Everything is read-only except writing the HTML file. The script never writes
   to Odoo / Linear / Metabase.
 - Each metric is isolated; one dead source never blocks the rest of the report.
+- The HTML has a **"Values only"** box (a textarea) — click it, ⌘A, copy, and
+  paste straight down the value column of the L10 tool. Plus the full Category /
+  Metric / Value copy-paste table.
+- Paid Users needs NetBird up so the broker (`100.67.235.51`) is reachable over
+  SSH; if SSH fails it degrades to `N/A` like any other source.
