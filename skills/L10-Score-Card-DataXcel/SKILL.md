@@ -42,11 +42,12 @@ window is the **previous completed Mon–Sun** (override with `--start/--end`).
    Optional flags: `--start YYYY-MM-DD --end YYYY-MM-DD`, `--out PATH`,
    `--pending-reports N`, `--data-inaccuracies N` (manual fallback if Linear is down).
 
-3. The script writes `~/Downloads/l10_scorecard_<start>_<end>.html` and prints a
-   JSON summary. Any metric it couldn't pull shows `N/A — <reason>` and is listed
-   under `NEEDS ATTENTION` on stderr — relay those to Mike.
+3. The script writes `~/Downloads/l10_scorecard_<start>_<end>.html`, **auto-opens
+   it** (pass `--no-open` to suppress), and prints a JSON summary. Any metric it
+   couldn't pull shows `N/A — <reason>` and is listed under `NEEDS ATTENTION` on
+   stderr — relay those to Mike.
 
-4. **Open the HTML for review:** `open <path>`.
+4. The HTML opens automatically on finish. (If `--no-open` was used: `open <path>`.)
 
 ## Credentials (all outside the repo — never commit)
 

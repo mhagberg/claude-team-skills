@@ -404,10 +404,17 @@ def main():
     ap.add_argument("--data-inaccuracies", type=int, default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--no-open", action="store_true", help="do NOT auto-open the HTML")
     a = ap.parse_args()
     rows, extras = build_rows(a.start, a.end, a.demos, a.pending_reports, a.data_inaccuracies)
     out = a.out or str(Path.home() / "Downloads" / f"l10_scorecard_{a.start}_{a.end}.html")
     Path(out).write_text(render_html(rows, extras, a.start, a.end))
+    if not a.no_open:
+        import subprocess
+        try:
+            subprocess.run(["open", out], check=False)
+        except Exception:
+            pass
     summary = {"start": a.start, "end": a.end, "out": out,
                "rows": [{"category": c, "metric": m, "value": raw, "source": src, "ok": ok}
                         for c, m, raw, pretty, src, ok in rows]}
