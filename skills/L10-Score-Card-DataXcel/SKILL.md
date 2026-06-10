@@ -6,7 +6,9 @@ description: Generate Mike's weekly DataXcel L10 (EOS Level-10) scorecard as a s
 # L10-Score-Card-DataXcel
 
 Build the weekly L10 scorecard HTML for Mike, then open it for review. Default
-window is the **previous completed Mon–Sun** (override with `--start/--end`).
+window is the **current week (Mon–Sun containing today)** — the live L10 week
+(override with `--start/--end`). GA page-views/engagement always use a trailing
+28-day window regardless.
 
 ## Metric sources
 
@@ -25,12 +27,16 @@ window is the **previous completed Mon–Sun** (override with `--start/--end`).
 
 ## Steps
 
-1. **Count demos from Google Calendar.** Use the `gcal` MCP tools
-   (`list-events`) for the target window on Mike's `primary` calendar. Demos are
-   the booked-appointment events — titled **"Appointment with Mike (…)"** (these
-   come from the DataXcel demo booking link), plus anything explicitly titled
-   "demo". Exclude standups, lunches, OOO, payroll, conferences. Hold that count
-   for `--demos`.
+1. **Count demos from Google Calendar.** Use the `gcal` MCP `list-events` for the
+   target window across Mike's **owned calendars** (at least `mhagberg@xcel.software`
+   and `scline@xcel.software`). A demo is any event whose title:
+   - **starts with "Appointment with Mike"** (the DataXcel demo-booking link
+     creates these as "Appointment with Mike (Customer Name)"), OR
+   - **contains "DataXcel Demo"**, OR
+   - **contains "demo"** (case-insensitive).
+   De-dupe events that appear on multiple calendars (same event id). Exclude
+   standups, lunches, OOO, payroll, birthdays, the TUG conference block. Pass the
+   count as `--demos N`.
 
 2. **Run the generator with the PARENT project's venv** (GA4 lib lives there):
 
