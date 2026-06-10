@@ -19,7 +19,6 @@ window is the **current week (Mon–Sun containing today)** — the live L10 wee
 | Number of Demos | **Google Calendar (you, via MCP)** | count demo events in window → pass `--demos N` |
 | Quotations Sent (#/$) | Odoo `sale.order` | DataXcel quotes (a line's product name contains "DataXcel") created in window, non-cancelled |
 | Hours Billed (#/$) | Odoo invoices | posted customer-invoice lines on **hourly dev products** (product name contains "Hour") |
-| Odoo Page Views | Odoo `website.track` | tracked views in window |
 | GA Page Views / Avg Engagement | GA4 API | property 483003616, creds `~/.secrets/ga4-reader.json`. **Trailing 28-day window** (`GA_WINDOW_DAYS`, matches Mike's GA "Pages and screens" report Total ≈437), NOT the weekly window. Engagement = site-wide avg/active user (GA "Total"), NOT the max page |
 | PostHog Page Views / Avg Engagement | PostHog | project 425826, key `~/.secrets/posthog-personal-api-key` (shown as "extra", not in the canonical 13) |
 | Pending Reports / Data Inaccuracies | Linear | **team SAG (SageXcel)** active cycle, not-done. Data Inaccuracies = Bug-labelled; Pending Reports = the rest |
