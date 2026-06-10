@@ -5,10 +5,11 @@ description: Generate Mike's weekly DataXcel L10 (EOS Level-10) scorecard as a s
 
 # L10-Score-Card-DataXcel
 
-Build the weekly L10 scorecard HTML for Mike, then open it for review. Default
-window is the **current week (Mon–Sun containing today)** — the live L10 week
-(override with `--start/--end`). GA page-views/engagement always use a trailing
-28-day window regardless.
+Build the weekly L10 scorecard HTML for Mike, then open it for review. The
+DataXcel L10 week runs **Wednesday → Tuesday**. Default window = the most recently
+completed Wed–Tue period (e.g. run on Wed 6/10 → window 6/3–6/9). Override with
+`--start/--end`. GA page-views/engagement always use a trailing 28-day window
+regardless (this is why GA ties to Mike's GA "Pages and screens" Total).
 
 ## Metric sources
 

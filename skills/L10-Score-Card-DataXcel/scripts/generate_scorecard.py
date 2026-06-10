@@ -395,11 +395,14 @@ def render_html(rows, extras, s, e):
 </div></body></html>"""
 
 def default_window():
-    # CURRENT week (Mon–Sun containing today) — the live L10 week. Future days in
-    # the week simply have no data yet. Use --start/--end for any other week.
+    # DataXcel L10 week runs WEDNESDAY → TUESDAY. Report the most recently
+    # completed Wed–Tue week (ends on the most recent Tuesday on/before today).
+    # e.g. on Wed 6/10 the window is Wed 6/3 → Tue 6/9.
     today = date.today()
-    mon = today - timedelta(days=today.weekday())
-    return mon.isoformat(), (mon + timedelta(days=6)).isoformat()
+    days_since_tue = (today.weekday() - 1) % 7   # Mon=0..Sun=6; Tuesday=1
+    end = today - timedelta(days=days_since_tue)  # most recent Tuesday
+    start = end - timedelta(days=6)               # the Wednesday before it
+    return start.isoformat(), end.isoformat()
 
 def main():
     ds, de = default_window()
