@@ -35,21 +35,26 @@ Every later value — the Sage **API-security-group** username/password, the Net
 
 Validate `<slug>` against `^[a-z0-9-]+$`; reject + stop on mismatch. Validate `--from-phase` (1-4) if given.
 
-Open the onboarding reference for the operator:
+Ask the operator **which playbook to open** — they run write-back onboarding either with a customer or solo, so offer both and `open` whichever they pick (or both):
+
+| Audience | File | When |
+|----------|------|------|
+| **Customer / IT-facing** | `Sage-API-Write-Back/docs/it-writeback-quickstart.html` | running it live with the customer's IT |
+| **Operator / yourself** | `Sage-API-Write-Back/docs/onboarding-playbook.html` | doing it yourself / internal reference |
+
 ```
-open Sage-API-Write-Back/docs/ONBOARDING.md   # or the HTML on the Desktop
+open Sage-API-Write-Back/docs/it-writeback-quickstart.html     # customer-facing
+open Sage-API-Write-Back/docs/onboarding-playbook.html         # operator-facing
 ```
-Confirm with the operator that the customer is already read-only-live (see Prerequisite). Get `continue`.
+(Markdown source of truth: `docs/ONBOARDING.md`.) Confirm the customer is already read-only-live (see Prerequisite). Get `continue`.
 
 ## Phase 1 — Sage least-privilege API user (security P1 #9)
 
-Write-back must post under a Sage user in the **API security group**, NOT Company Administrator. This is the only manual Sage-side step and the customer's IT does it once in **Database Administration**.
-
-Print, for the operator to relay to the customer:
-
-> Create a Sage user (e.g. `DATAXCEL-API`) and assign it to the **API** security group on the live company. Do NOT make it Company Administrator. Send us the username + password over your secure channel.
-
-PAUSE until the operator confirms they have the `<SageApiUser>` + `<SageApiPassword>` and the live `<CompanyDatabase>` + `<DataSource>` (from `XcelConnectAndUpdater/CLAUDE.md`, captured during read-only onboarding).
+Print the EXACT command and PAUSE:
+```
+/onboard-writeback-sage-user <slug>
+```
+That sub-skill guides the customer's IT to create the least-privilege Sage **API-security-group** user (NOT Company Administrator) and captures the four values the rest of the flow needs. Capture from its output: `<SageApiUser>`, `<SageApiPassword>`, `<CompanyDatabase>`, `<DataSource>`.
 
 ## Phase 2 — Operator provisions (NetBird + token)
 
@@ -61,12 +66,11 @@ That sub-skill creates the customer's NetBird group + scoped **9447-only** polic
 
 ## Phase 3 — Customer one-click install
 
-Send the customer the one-liner from Phase 2. They run it in an **elevated PowerShell** on their Sage server:
+Print the EXACT command and PAUSE:
 ```
-$p = @{ SetupKey='…'; AgentToken='…'; CompanyDatabase='…'; DataSource='…'; SageApiUser='…'; SageApiPassword='…' }
-irm https://get.xcel.report/writeback.ps1 | iex; Install-Writeback @p
+/onboard-writeback-install <slug>
 ```
-The installer self-tests and prints the box's **mesh IP** (`100.67.x`). PAUSE until the operator pastes back that mesh IP (or `done` + the IP).
+That sub-skill hands the customer the one-liner from Phase 2 + the IT HTML quickstart, walks them through the one-click installer, and captures the box's **mesh IP** (`100.67.x`) from the installer's self-test. Capture that mesh IP.
 
 ## Phase 4 — Record the agent + verify
 
