@@ -37,7 +37,7 @@ open Sage-API-Write-Back/docs/onboarding-playbook.html
 Give whoever is running it (the customer's IT, or you) the single PowerShell block from Phase 2 (carries the setup key + agent token):
 ```
 $p = @{ SetupKey='…'; AgentToken='…'; CompanyDatabase='…'; DataSource='…'; SageApiUser='…'; SageApiPassword='…' }
-irm https://get.xcel.report/writeback.ps1 | iex; Install-Writeback @p
+irm https://broker.xcel.report/updates/writeback.ps1 | iex; Install-Writeback @p
 ```
 Run it in an **elevated PowerShell** (Run as Administrator) on the **Sage server**. PAUSE.
 
