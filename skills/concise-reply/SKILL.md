@@ -1,16 +1,16 @@
 ---
-name: clear-reply
-description: Force the next answer into Mike's accessibility format — diagram/table first, ≤50 words of prose, one decision at a time, recommend-don't-list, request on the last line. Use when Mike runs /clear-reply or says "be clear", "too long", "I can't read that", "give it to me concisely", or when a reply is drifting into walls of text.
+name: concise-reply
+description: Force the next answer into Mike's accessibility format — diagram/table first, ≤50 words of prose, one decision at a time, recommend-don't-list, request on the last line. Use when Mike runs /concise-reply or says "be clear", "too long", "I can't read that", "give it to me concisely", or when a reply is drifting into walls of text.
 ---
 
-# clear-reply
+# concise-reply
 
-You are running the **clear-reply** skill. It is a hard formatting gate for the
+You are running the **concise-reply** skill. It is a hard formatting gate for the
 reply you are about to give. Mike has **dyslexia and ADHD** — this is a
 cognitive constraint, not a style preference. He cannot read more than ~50
 words of prose and loses the thread without a visual.
 
-If `/clear-reply <text>` was given an argument, the argument is the question or
+If `/concise-reply <text>` was given an argument, the argument is the question or
 the draft you must re-render in this format. If no argument, apply the format
 to whatever you were about to say next.
 
