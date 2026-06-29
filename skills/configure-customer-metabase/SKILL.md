@@ -1,6 +1,6 @@
 ---
 name: configure-customer-metabase
-description: Configure a newly-cloned customer Metabase tenant to the canonical DataXcel settings — site name, HTTPS site URL, IANA timezone, email From Name + Reply-To, email address for help requests (admin-email), iframe allowlist, custom-homepage-dashboard — and archive non-team users left over from the demo clone. Runs AFTER `/onboard-customer-hub` and BEFORE `/validate-hub-dashboards`. **The AI agent does all of this automatically using the shared `single.xcel.report` Metabase API key.**
+description: Configure a newly-cloned customer Metabase tenant to the canonical DataXcel settings — site name, HTTPS site URL, IANA timezone, email From Name + Reply-To, email address for help requests (admin-email), iframe allowlist, custom-homepage-dashboard — disconnect the Anthropic AI key, turn off the built-in MCP server, and archive non-team users left over from the demo clone. Runs AFTER `/onboard-customer-hub` and BEFORE `/validate-hub-dashboards`. **The AI agent does all of this automatically using the shared `single.xcel.report` Metabase API key.**
 ---
 
 # configure-customer-metabase
@@ -408,6 +408,43 @@ separate setting on this version (newer Metabase auto-enables when
 `custom-homepage-dashboard` is set; older does not). If you see an
 `enable-custom-homepage` row in `GET /api/setting`, PUT it to `true` the
 same way.
+
+### 4.9 Disconnect AI (Anthropic key) + turn off the MCP server (RISKY — confirm)
+
+**Mike, 2026-06-10:** every cloned customer tenant must have our AI key
+disconnected and the built-in MCP server turned OFF as part of the
+Metabase cleanup. We do NOT hand customers our Anthropic key, and we do
+NOT leave a Metabase MCP endpoint exposed on their instance. Most clones
+come over clean (key null, `mcp-enabled?` false), but apply these
+explicitly — idempotent, defensive.
+
+Read current state, then PUT any that aren't already in the target state:
+
+| Setting | Target | Why |
+|---------|--------|-----|
+| `llm-anthropic-api-key` | `null` (cleared) | disconnect our Anthropic key |
+| `llm-openai-api-key` | `null` | clear any other provider key |
+| `llm-openrouter-api-key` | `null` | clear any other provider key |
+| `enable-ai-controls?` | `false` | AI features off |
+| `enable-metabot-v3?` | `false` | Metabot off |
+| `ai-features-enabled?` | `false` (or leave `null`) | AI features off |
+| `mcp-enabled?` | `false` | turn OFF the MCP server |
+| `mcp-apps-cors-enabled-clients` | `[]` | drop the leftover `["claude"]` MCP CORS allowlist |
+
+For each that needs changing, show the exact `PUT
+<metabase-url>/api/setting/<key>` + body and ask `yes` (a single batch
+`yes` covering all AI/MCP writes is fine — they're one logical step).
+Verify with a follow-up GET that `llm-anthropic-api-key-configured?` is
+`false` and `mcp-enabled?` is `false`.
+
+```
+PUT <metabase-url>/api/setting/llm-anthropic-api-key   {"value": null}
+PUT <metabase-url>/api/setting/mcp-enabled?            {"value": false}
+…(the rest above, only those not already at target)
+```
+
+If everything is already at target, print "AI key disconnected + MCP
+server already off — no change" and move on.
 
 ## Step 5 — archive non-team users (RISKY — single batch confirm)
 

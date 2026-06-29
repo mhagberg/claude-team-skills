@@ -60,22 +60,36 @@ port range. Print a one-line plan summary with all four resolved values
 
 ## Step 2 — broker reachability check (read-only)
 
-If an SSH key for `mike@100.67.235.51` is available locally (test with
-`ssh -o BatchMode=yes -o ConnectTimeout=3 mike@100.67.235.51 echo ok`),
-run:
+> **2026-06-26 — the old docker-compose Airflow host `mike@100.67.235.51`
+> is DECOMMISSIONED.** Airflow now runs on EKS, reached only via the REST
+> API at `https://airflow.xcel.software` (see Step 5). There is no shell host
+> to `nc` from anymore.
+
+If you have a NetBird-connected machine locally, you *may* optionally
+sanity-check the customer's SQL port directly:
 
 ```bash
-ssh mike@100.67.235.51 "nc -zv <netbird-ip> <sql-port>"
+nc -zv <netbird-ip> <sql-port>
 ```
 
-If reachable: print "OK". If not: print a warning but continue — the dbt
-DAG trigger in Step 5 will be the real end-to-end check. Do NOT block the
-skill on this — sometimes the SSH key isn't present.
+If reachable: print "OK". If not (or you can't reach the NetBird mesh
+locally): print a warning but continue — the dbt DAG trigger in Step 5 is
+the real end-to-end check. Do NOT block the skill on this.
 
 ## Step 3 — fill profiles.yml + push (RISKY — confirm push)
 
+> **2026-06-26 — DAGs + dbt moved to the new `airflow_dags` repo.** The
+> Airflow stack is now `JobXcel-AI/airflow_dags` (cloned as a sibling at
+> `/Users/mike/dev/projects/airflow_dags`), with `sage_dbt` as a git
+> submodule inside it. `profiles.yml` still lives in the `sage_dbt` repo
+> (secrets committed in plaintext there, per Stan) — git-sync delivers it
+> to the EKS pods. So the edit target is now
+> `airflow_dags/sage_dbt/profiles.yml`, and committing it is a TWO-step
+> push: commit inside the `sage_dbt` submodule, then bump the submodule
+> pointer in `airflow_dags`.
+
 Edit
-`/Users/mike/dev/projects/etl_pipeline/airflow/sage_dbt/profiles.yml` in
+`/Users/mike/dev/projects/airflow_dags/sage_dbt/profiles.yml` in
 place. Find the `<slug>:` block (the pre-call skill prints the draft; the
 operator may or may not have pasted it in yet).
 
@@ -108,29 +122,36 @@ print a diff. Ask the user to confirm overwriting.
 
 Confirm:
 
-> Stage and commit profiles.yml on `etl_pipeline` with message
-> `chore(profiles): add <slug> Sage DW connection`? Push to origin? Type
-> `yes`.
+> Commit profiles.yml in the `sage_dbt` submodule with message
+> `chore(profiles): add <slug> Sage DW connection`, push it, then bump the
+> `sage_dbt` pointer in `airflow_dags` and push that too? Type `yes`.
 
-On `yes`:
+On `yes` (TWO-step push — submodule first, then pointer bump):
 
 ```bash
-git -C /Users/mike/dev/projects/etl_pipeline add airflow/sage_dbt/profiles.yml
-git -C /Users/mike/dev/projects/etl_pipeline commit -m "chore(profiles): add <slug> Sage DW connection"
-git -C /Users/mike/dev/projects/etl_pipeline push
+# 1) commit the profile inside the sage_dbt submodule
+git -C /Users/mike/dev/projects/airflow_dags/sage_dbt add profiles.yml
+git -C /Users/mike/dev/projects/airflow_dags/sage_dbt commit -m "chore(profiles): add <slug> Sage DW connection"
+git -C /Users/mike/dev/projects/airflow_dags/sage_dbt push
+
+# 2) bump the submodule pointer in airflow_dags so git-sync delivers it
+git -C /Users/mike/dev/projects/airflow_dags add sage_dbt
+git -C /Users/mike/dev/projects/airflow_dags commit -m "chore: bump sage_dbt — add <slug> profile"
+git -C /Users/mike/dev/projects/airflow_dags push
 ```
 
 ## Step 4 — single_customers.py entry + push (RISKY — confirm push)
 
 Edit
-`/Users/mike/dev/projects/etl_pipeline/airflow/dags/utils/single_customers.py`
+`/Users/mike/dev/projects/airflow_dags/dags/utils/single_customers.py`
 to add `DBTConfig(customer="<slug>", schedule="45 13-23 * * *",
 snapshots=True)`. Match the existing list's formatting/indent — read the
 file first to see the convention.
 
 (If the customer is multi-company (rollup), the on-call skill flagged
-this — instead add a `RollupConfig` entry in `rollup_customers.py`. Use
-the slug + per-company list from `--sage-db` if it's comma-separated.)
+this — instead add a `RollupConfig` entry in
+`/Users/mike/dev/projects/airflow_dags/dags/utils/rollup_customers.py`.
+Use the slug + per-company list from `--sage-db` if it's comma-separated.)
 
 Confirm push:
 
@@ -138,27 +159,61 @@ Confirm push:
 > `feat: add <slug> to dbt customer registry (snapshots=True)`? Push to
 > origin? Type `yes`.
 
-On `yes`, commit + push.
+On `yes`:
+
+```bash
+git -C /Users/mike/dev/projects/airflow_dags add dags/utils/single_customers.py
+git -C /Users/mike/dev/projects/airflow_dags commit -m "feat: add <slug> to dbt customer registry (snapshots=True)"
+git -C /Users/mike/dev/projects/airflow_dags push
+```
+
+git-sync on the EKS cluster picks up the new `DBTConfig` and the scheduler
+generates `<slug>_dataxcel_analytics_dbt_dag` (+ `_snapshot`) within a
+couple of minutes — no image rebuild needed (code ships by git-sync; the
+ECR image only carries dependencies).
 
 ## Step 5 — trigger dbt DAG (RISKY — confirm)
 
+> **2026-06-26 — triggering is now via the Airflow REST API** at
+> `https://airflow.xcel.software` (the old `ssh … docker exec
+> airflow-airflow-scheduler-1 airflow dags trigger` path is dead — that
+> host is decommissioned, and Stan confirmed triggering is "all done with
+> airflow," NOT kubectl). Airflow 3.x auth = get a JWT from `/auth/token`,
+> then POST a run.
+
+**Credentials.** The REST call needs an Airflow API username + password.
+Source them from the `airflow_api` 1Password entry (or env vars
+`AIRFLOW_API_USER` / `AIRFLOW_API_PASSWORD`). If neither is available,
+fall back to the UI: open
+`https://airflow.xcel.software/dags/<slug>_dataxcel_analytics_dbt_dag` and
+click ▶ **Trigger** — then skip the curl below.
+
 Confirm:
 
-> Trigger Airflow DAG `<slug>_dataxcel_analytics_dbt_dag` via SSH to
-> `mike@100.67.235.51`? This kicks off the first dbt build for the customer.
-> Type `yes`.
+> Trigger Airflow DAG `<slug>_dataxcel_analytics_dbt_dag` via the REST API
+> at `https://airflow.xcel.software`? This kicks off the first dbt build for
+> the customer. Type `yes`.
 
-On `yes`, ask the user for the sudo password (do NOT hardcode). Then:
+On `yes` (the new customer's DAG may take ~1–2 min to appear after Step 4's
+push — git-sync + scheduler parse):
 
 ```bash
-ssh mike@100.67.235.51 "echo '<password>' | sudo -S docker exec airflow-airflow-scheduler-1 \
-  airflow dags trigger <slug>_dataxcel_analytics_dbt_dag"
+AIRFLOW_URL="https://airflow.xcel.software"
+TOKEN=$(curl -s -X POST "$AIRFLOW_URL/auth/token" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$AIRFLOW_API_USER\",\"password\":\"$AIRFLOW_API_PASSWORD\"}" \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+curl -s -X POST "$AIRFLOW_URL/api/v2/dags/<slug>_dataxcel_analytics_dbt_dag/dagRuns" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"logical_date": null}'
 ```
 
-Tail logs for ~30 seconds via `docker exec` against the scheduler. Stop
-tailing once the user sees the DAG is queued. If the DAG name isn't
-recognized, tell the user to wait 30s for the Airflow scheduler tick and
-re-run.
+A `409 Conflict` means a run already exists (fine). A `404` means the DAG
+hasn't been parsed yet — wait ~1 min and re-run. Print the Airflow UI link
+so the user can watch it:
+`https://airflow.xcel.software/dags/<slug>_dataxcel_analytics_dbt_dag`.
 
 ## Step 6 — Metabase DB connection: UPDATE existing id=2 (RISKY — confirm)
 

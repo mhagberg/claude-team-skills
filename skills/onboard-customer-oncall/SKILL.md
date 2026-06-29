@@ -132,18 +132,19 @@ If the peer count is zero (timing race — IT hasn't actually finished the
 install), the script will error. Tell Mike: "Wait 30 seconds and re-run
 `/onboard-customer-oncall <slug>` — peer hasn't registered yet." Stop.
 
-### 4c. Broker-to-customer TCP reachability check (read-only)
+### 4c. Customer TCP reachability check (read-only)
 
-If a NetBird-side SSH key for `mike@100.67.235.51` is available locally,
-run from the broker:
+> **2026-06-26 — the old broker host `mike@100.67.235.51` is
+> decommissioned.** Run this directly from the operator's NetBird-connected
+> machine instead of SSH-ing to the broker.
 
 ```bash
-ssh mike@100.67.235.51 "nc -zv <NETBIRD_IP> <SQL_PORT>"
+nc -zv <NETBIRD_IP> <SQL_PORT>
 ```
 
-If reachable: print "OK". If not: print a warning but continue —
-`/onboard-customer-postcall` Step 5 (dbt DAG trigger) is the real
-end-to-end check. Do NOT block the skill.
+If reachable: print "OK". If not (or the operator isn't on the NetBird
+mesh): print a warning but continue — `/onboard-customer-postcall` Step 5
+(dbt DAG trigger) is the real end-to-end check. Do NOT block the skill.
 
 ## Step 5 — print the sysadmin SQL script URL + capture `dataxcel` password (PAUSE-PROMPT)
 
@@ -181,26 +182,32 @@ SELECT name FROM sys.databases
  ORDER BY name
 ```
 
-Via:
+> **2026-06-26 — run this LOCALLY on the operator's NetBird-connected
+> machine** (the old `ssh mike@100.67.235.51 … docker exec` host is gone).
+> Needs `pyodbc` + the `ODBC Driver 18 for SQL Server` installed locally.
+> If they're missing, install (`pip install pyodbc`, `brew install
+> msodbcsql18`) or run the same query from any NetBird host that has them.
+
+Via (set `DXP` to the captured `dataxcel` password first, e.g.
+`export DXP='<DATAXCEL_PW>'`):
 
 ```bash
-ssh mike@100.67.235.51 \
-  "docker exec airflow-airflow-scheduler-1 python3 - <<'PY'
+DXP="$DXP" python3 - <<'PY'
 import pyodbc, os
 cn = pyodbc.connect(
     'DRIVER={ODBC Driver 18 for SQL Server};'
-    f'SERVER=<NETBIRD_IP>,<SQL_PORT>;'
+    'SERVER=<NETBIRD_IP>,<SQL_PORT>;'
     'DATABASE=master;UID=dataxcel;'
-    f'PWD={os.environ[\"DXP\"]};'
+    f'PWD={os.environ["DXP"]};'
     'TrustServerCertificate=yes'
 )
 cur = cn.cursor()
-cur.execute(\"SELECT name FROM sys.databases WHERE name NOT IN \"
-            \"('master','tempdb','model','msdb','dataxcel_analytics') \"
-            \"ORDER BY name\")
+cur.execute("SELECT name FROM sys.databases WHERE name NOT IN "
+            "('master','tempdb','model','msdb','dataxcel_analytics') "
+            "ORDER BY name")
 for (n,) in cur.fetchall():
     print(n)
-PY"
+PY
 ```
 
 (Pass `DATAXCEL_PW` via env var `DXP` over the SSH connection so it
@@ -233,7 +240,10 @@ Confirm:
 > grant `dataxcel` db_owner? This is the warehouse DB dbt writes
 > snapshots and marts into. Type `yes`.
 
-On `yes`, run (over the same SSH-into-broker tunnel):
+On `yes`, run the SQL below against `<NETBIRD_IP>,<SQL_PORT>` from the
+operator's NetBird-connected machine — same local `pyodbc` path as Step 6
+(wrap these statements in a `cur.execute(...)` per statement, dropping the
+`GO` batch separators which pyodbc doesn't accept):
 
 ```sql
 CREATE DATABASE dataxcel_analytics;

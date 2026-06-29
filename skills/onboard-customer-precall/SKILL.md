@@ -176,6 +176,12 @@ continue." Pause. Wait for `dns-done`.
 These get pushed by `/onboard-customer-postcall` once the NetBird IP, SQL
 port, and Sage DB name are known. At pre-call time they are PLACEHOLDERS.
 
+> **2026-06-26 — paths moved to the `airflow_dags` repo** (cloned as a
+> sibling at `/Users/mike/dev/projects/airflow_dags`). When postcall writes
+> these, the targets are `airflow_dags/sage_dbt/profiles.yml` and
+> `airflow_dags/dags/utils/single_customers.py` — NOT the old
+> `etl_pipeline/airflow/...` paths.
+
 **profiles.yml block** — print, do not edit any file yet:
 
 ```yaml
@@ -205,6 +211,105 @@ DBTConfig(customer="<slug>", schedule="45 13-23 * * *", snapshots=True),
 Tell the user: "Don't commit these yet — `/onboard-customer-postcall`
 fills in the four TBD values and pushes both files."
 
+## Step 5b — Create the customer's shared Odoo Documents folder (portal) (RISKY — Odoo write, confirm)
+
+Give the customer a place to drop files for Mike (Sage backup, financials,
+logos, W-9, etc.) that shows up on their Odoo customer portal at
+`app.xcel.software/my` → **Documents**. Mirror the known-good
+"American Integrated Services" folder (id 22).
+
+**Hard gotcha — access must go to the portal-login partner.** A portal
+user is attached to ONE `res.partner`. The folder only appears on the
+portal if `documents.access` grants edit to *that* partner — usually the
+**company** partner (e.g. `Central Service Inc.`), NOT a child contact
+like `Liz York`. Granting a child contact silently shows nothing.
+
+### 5b.1 Resolve the partner (read-only)
+
+Load Odoo creds the same way the recon scripts do (`.env` →
+`ODOO_URL=https://app.xcel.software`, `ODOO_DB`, `ODOO_USERNAME` (uid),
+`ODOO_PASSWORD` (api key)). Then:
+
+1. Find the customer's portal user:
+   `res.users` search `[("login","=","<customer-email>"),("share","=",true)]`
+   → read `partner_id`. **That partner id is the access target** — call it
+   `<portal-partner-id>`.
+2. If no portal user exists yet, **invite one in step 5b.1b below** (Mike,
+   2026-06-10 — don't just create an orphan folder; send the customer their
+   portal login so the folder actually surfaces). Do NOT guess a child
+   contact for the access grant.
+
+### 5b.1b Invite the customer's portal user (RISKY — Odoo write + sends a customer email)
+
+If `5b.1` found no portal user, grant portal access to the **company
+partner** (the `<portal-partner-id>`) using the customer's primary-contact
+email — this both sends them a login invite to `app.xcel.software` AND
+makes them the partner the Documents folder will surface for. This mirrors
+the csi pattern (the portal user lands on the *company* partner, e.g.
+csi → partner 85730, cbsl → partner 85791).
+
+Steps (XML-RPC):
+1. Set the company partner's `email` to the customer contact email (so the
+   portal user's login is that email): `res.partner write [<company>] {email}`.
+2. Optionally create/mark the primary person as the **lead contact**
+   (`res.partner create {name, parent_id:<company>, email, function:"Lead
+   Contact", type:"contact"}`) — Mike asked for this.
+3. Grant portal access via the wizard:
+   - `wiz = portal.wizard create [{}]` **with context**
+     `{active_model:"res.partner", active_ids:[<company>]}`.
+   - find the wizard row: `portal.wizard.user search_read
+     [[["wizard_id","=",wiz]]] {fields:[partner_id,email]}` — pick the row
+     whose `partner_id == <company>`.
+   - `portal.wizard.user write [row] {email}` then
+     `portal.wizard.user action_grant_access [row]` → **sends the invite**.
+   - **Odoo 18 gotchas:** the field `in_portal` no longer exists (use
+     `action_grant_access`, NOT `write in_portal=True + action_apply`); and
+     domains must be double-wrapped — a single condition is
+     `[[["field","=",val]]]` passed as the args list.
+4. Verify: `res.users search_read [[["login","=ilike",<email>]]]` →
+   confirm a `share:true` user whose `partner_id` is the company. Use THAT
+   `partner_id` as the `<portal-partner-id>` for the folder in 5b.2.
+
+Worked example (cbsl, 2026-06-10): invited `JonN@cbsl.co` → portal user 58
+on company partner 85791; folder then granted to 85791.
+
+### 5b.2 Create the folder + grant edit (confirm)
+
+Show the exact plan and ask `yes`:
+
+```
+documents.document create:
+  name        "<Company Name>"
+  type        "folder"
+  folder_id   8            # Projects (same parent as AIS id 22)
+  owner_id    6            # Mike Hagberg
+→ then documents.access create:
+  document_id <new folder id>
+  partner_id  <portal-partner-id>   # the portal-login partner, per gotcha
+  role        "edit"               # Editor — can upload & share
+```
+
+On `yes`, create the `documents.document`, capture the returned id
+(create returns `[id]` — unwrap the int), then create the
+`documents.access` row with that int id. Do not pass `access_ids` inline
+on the document create — it nests badly over XML-RPC; create the access
+row in a second call.
+
+### 5b.3 Verify (read-only)
+
+Read the folder back with `access_ids` expanded and assert one row has
+`partner_id == <portal-partner-id>` and `role == "edit"`. Print:
+
+```
+Documents folder "<Company Name>" (id <fid>) → Editor for <portal-partner>
+Portal: app.xcel.software/my → Documents
+```
+
+> Worked example (Central Service Inc., 2026-06-10): folder id **75** under
+> Projects, owner Mike, editor = partner **85730** (`Central Service Inc.`,
+> the partner Liz's portal user 57 is attached to). Liz York the child
+> contact would NOT have surfaced it.
+
 ## Step 6 — NetBird provisioning with placeholder SQL port (RISKY — confirm)
 
 This is the load-bearing decision: `netbird-provision.sh` requires
@@ -221,6 +326,21 @@ because:
 
 Use `1433` as the placeholder. The on-call skill rewrites it.
 
+**First, ask Mike for the password share link (Mike, 2026-06-10):**
+
+> Paste a **1Password share link** for this customer's DataXcel SQL
+> password. Make it **restricted to the customer's contact email** (in
+> 1Password's share dialog, "people with the email") so only they can open
+> it. We embed it in the IT quickstart HTML so the customer clicks → confirms
+> their email → copies the password and pastes it into
+> `setup-sage-sysadmin.ps1` — **they never have to send the password back to
+> us.** (Generate the password yourself with `[A-Za-z0-9._-]` only — no
+> special chars, they break JDBC.)
+
+Pass it to the provisioner as `--password-link "<url>"`. If Mike skips it,
+proceed without (the HTML's password button will be a dead `#` link — note
+that to Mike).
+
 Confirm with the user, exact text:
 
 > Run `./netbird-provision.sh --customer <slug> --sql-port 1433` (placeholder
@@ -236,7 +356,7 @@ On `yes`:
 
 ```bash
 cd /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater
-./netbird-provision.sh --customer <slug> --sql-port 1433
+./netbird-provision.sh --customer <slug> --sql-port 1433 --password-link "<1password-share-url>"
 ```
 
 Capture the setup key and the printed `📧 EMAIL TO CUSTOMER IT:` URL
@@ -250,9 +370,17 @@ existing table format and mark the SQL port column as `1433 (placeholder
 — update in oncall)`. If the file or table is missing, abort with a
 clear error pointing at the playbook.
 
-## Step 7 — print the IT-facing URL
+## Step 7 — open the IT-facing URL (auto-open, then print)
 
-Print the EXACT URL Mike sends to Chris/customer IT:
+**Always `open` the URL in the operator's browser the moment it's ready
+(Mike, 2026-06-10)** — so they just look at it / forward it, no need to read
+instructions:
+
+```bash
+open "https://broker.xcel.report/updates/quickstart-<slug>.html"
+```
+
+Then also print it for copy/paste:
 
 ```
 https://broker.xcel.report/updates/quickstart-<slug>.html
@@ -261,6 +389,8 @@ https://broker.xcel.report/updates/quickstart-<slug>.html
 That URL is verified 200 by `netbird-provision.sh`. Do NOT print a
 placeholder like `<PASTE-SETUP-KEY-HERE>` — the setup key is already baked
 into the per-customer `connect-netbird-<slug>.ps1` that the HTML loads.
+The customer's DataXcel password is on this page as a click-to-copy
+1Password link (from `--password-link`) — they never send it back.
 
 ## Step 8 — summary + next step
 
@@ -273,6 +403,7 @@ Metabase EKS tenant: deployed (or status)
 DNS CNAME: customer added (dns-done received)
 profiles.yml draft: printed above (TBD placeholders — postcall fills)
 single_customers.py draft: printed above
+Documents folder: "<Company Name>" (Editor → portal-login partner)
 NetBird group: customer-<slug> + auto-join to Sage100ContractorDatabases
 NetBird policy: xcel-broker-to-<slug> TCP 1433 (PLACEHOLDER — oncall updates)
 Setup key: <key> (baked into per-customer .ps1; do not re-paste)

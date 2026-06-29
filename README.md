@@ -4,6 +4,19 @@ Shared Claude Code skills for the Xcel Software team. Each skill spawns multiple
 
 ## Available skills
 
+> **2026-06-26 — Airflow migration (affects all onboarding skills).** The
+> DAGs + dbt projects moved out of `etl_pipeline/airflow/…` into the new
+> repo `JobXcel-AI/airflow_dags` (sibling clone at
+> `/Users/mike/dev/projects/airflow_dags`; `sage_dbt` is a submodule of
+> it). `single_customers.py`/`rollup_customers.py` →
+> `airflow_dags/dags/utils/`; `profiles.yml` → `airflow_dags/sage_dbt/`
+> (two-step push: commit in the submodule, then bump the pointer).
+> Triggering a DAG is now via the **Airflow REST API at
+> `https://airflow.xcel.software`** (JWT from `/auth/token` → POST
+> `/api/v2/dags/<id>/dagRuns`) — the old `ssh mike@100.67.235.51 … docker
+> exec` host is decommissioned. The CEO briefing DAG has NOT migrated yet
+> (still in `metabase-migration`, runs on old Airflow via the same domain).
+
 | Skill | What it does |
 |-------|--------------|
 | `/parallel-code-review` | 5 independent agents review the current `git diff` (or a PR), each rate 1–10. Consolidated table + recommendations. |

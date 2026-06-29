@@ -282,9 +282,10 @@ signal even if it's not strictly a number-validates-vs-Sage check.
 For each report where the user said `skip-excel-validators`:
 
 1. Open the corresponding dbt mart SQL in
-   `etl_pipeline/airflow/sage_dbt/dataXcel/models/mart/` (Balance Sheet =
+   `airflow_dags/sage_dbt/dataXcel/models/mart/` (Balance Sheet =
    `Balance_Sheet.sql`, Income Statement = the marts feeding dashboard 49,
-   etc.).
+   etc.). (Moved 2026-06-26 from the old `etl_pipeline/airflow/sage_dbt/…`
+   path; same `sage_dbt` repo, now a submodule of `airflow_dags`.)
 2. Run that exact SELECT against the customer's `dataxcel_analytics` SQL
    Server via Metabase's `/api/dataset` native query endpoint (POST with
    `{"database": <db_id>, "type": "native", "native": {"query": "<sql>"}}`).

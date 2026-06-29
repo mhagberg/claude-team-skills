@@ -142,12 +142,20 @@ def m_hours_billed(s, e):
     src = "Odoo invoices (hourly dev work)"
     if not ids:
         return (0, 0.0), src
-    # hourly dev lines = product whose name contains "Hour" (Custom Software
-    # Development Hours, Odoo Development Hours). Excludes subscriptions/setup/hosting.
+    # hourly dev lines: match on ANY of three signals, because the dev-hour
+    # products are named inconsistently and don't all use the "Hours" UoM:
+    #   - "Custom Software Development Hours" (id 24)  -> name has "Hour"
+    #   - "Custom Report Development"        (id 23)  -> UoM "Hours", name has "Development"
+    #   - "Custom Development"               (id 216) -> UoM "Units", name has "Development"
+    # So we OR: name~"Hour" | name~"Development" | UoM~"Hour". Subscriptions/setup/
+    # hosting (Snapshots, Unlimited User Support, etc.) match none of these.
     # NOTE Odoo 18 product lines have display_type='product' (NOT False).
     lines = oex("account.move.line", "search_read",
                 [("move_id", "in", ids), ("display_type", "=", "product"),
-                 ("product_id.name", "ilike", "Hour")],
+                 "|", "|",
+                 ("product_id.name", "ilike", "Hour"),
+                 ("product_id.name", "ilike", "Development"),
+                 ("product_uom_id.name", "ilike", "Hour")],
                 ["quantity", "price_subtotal"])
     hrs = sum(l["quantity"] for l in lines)
     amt = sum(l["price_subtotal"] for l in lines)

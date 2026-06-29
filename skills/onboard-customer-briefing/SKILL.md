@@ -25,6 +25,15 @@ and you will spend two hours fighting the wrong YAML schema.
 | **`dataxcel-ai-briefing`** + parent-repo `scripts/update_*_ceo_briefing.py` | The CEO Weekly Briefing — React SPA at `ai.xcel.report`, Firestore-backed, iframed on Metabase D94. Runs **every Monday 6 AM UTC** via `customer_ceo_weekly_briefing` DAG. 7 production customers as of 2026-05-29: goodwin, single, jolma, ais, burbach, brekhus, pcg. | **THIS SKILL.** |
 | `dataxcel-board-reports-pipeline` | AIS-only **monthly** board-report PDF/HTML pipeline. Customer YAML config, ReportLab PDF generation, hosted at `board.xcel.report`. Runs `0 6 1 * *`. **AIS is the only production tenant.** | Don't touch this unless onboarding for AIS-style monthly reports. |
 
+> **2026-06-26 — the briefing DAG has NOT migrated to `airflow_dags` yet.**
+> `customer_ceo_briefing_dag.py` still lives in
+> `metabase-migration/metabase_customer_audit/airflow/` and runs on the
+> (old) Airflow that is still up in parallel — now reached at
+> `https://air.xcel.software` (Stan, 2026-06-26). Keep editing it there;
+> do NOT move it into `airflow_dags`. The first briefing is still always
+> generated locally during onboarding (free local-claude two-pass), never
+> deferred to the Monday DAG.
+
 The two pipelines share the prefix "briefing" and both touch Metabase
 iframes, which is how I (Claude) got it wrong onboarding Lunstrum
 2026-05-29. Do NOT create a `customers/<slug>.yaml` in
@@ -65,8 +74,10 @@ Required:
 
 Optional:
 - `--local-claude` — force the two-pass emit/consume flow (skip the
-  Anthropic API). Defaults to OFF; if `ANTHROPIC_API_KEY` is unset, the
-  skill flips it to ON automatically with a warning.
+  Anthropic API). **ON by default for onboarding** (Mike 2026-06-10:
+  always generate the onboarding first-run locally in Claude — no API
+  spend). The paid-API path is only for the scheduled weekly DAG. Also
+  auto-ON if `ANTHROPIC_API_KEY` is unset.
 - `--dashboard-id N` — override the homepage dashboard id (default 94).
 - `--api-key mb_...` — override the Metabase API key (default: shared
   `single.xcel.report` key from `XcelConnectAndUpdater/CLAUDE.md`).
@@ -167,11 +178,26 @@ Validate it still parses:
 python3 -c "import ast; ast.parse(open('/Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/scripts/update_construction_ceo_briefing.py').read())"
 ```
 
-## Step 5 — first briefing run (RISKY — confirm)
+## Step 5 — first briefing run (RISKY — confirm) — ALWAYS RUN DURING ONBOARDING
 
-Two paths. Pick based on `ANTHROPIC_API_KEY` and the `--local-claude` flag.
+**Onboarding rule (Mike, verbatim 2026-06-10): "always run it during the
+onboarding... and always run it with the AI running locally in claude so
+we don't have to pay to run it."**
 
-### 5a. Path A — Anthropic API available (default)
+So, two hard rules for onboarding:
+1. **The first briefing is ALWAYS generated and pushed as part of
+   onboarding** — never deferred to the Monday DAG, never "held for
+   later." A customer's dashboard should show a real briefing the day
+   they go live.
+2. **It is ALWAYS produced via the local-claude two-pass path (5b)** so
+   the onboarding operator's own Claude session writes the narrative —
+   **zero Anthropic API spend.** Do NOT call the paid API (5a) for the
+   onboarding first-run.
+
+Path A (paid API) below is documented ONLY for the scheduled weekly DAG.
+**For onboarding, skip straight to 5b.**
+
+### 5a. Path A — Anthropic API (scheduled weekly DAG only — NOT onboarding)
 
 Confirm:
 

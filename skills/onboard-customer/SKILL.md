@@ -148,6 +148,14 @@ What happens: fills `profiles.yml` with the four call-discovered values
 triggers the dbt DAG, adds the Metabase DB connection, syncs schema,
 clones the dashboard seed-set.
 
+> **2026-06-26 — Airflow migration.** The dbt repo is now
+> `JobXcel-AI/airflow_dags` (sibling clone at
+> `/Users/mike/dev/projects/airflow_dags`; `sage_dbt` is a submodule of
+> it), NOT `etl_pipeline/airflow/…`. DAG triggers go through the Airflow
+> REST API at `https://airflow.xcel.software` (the old
+> `ssh mike@100.67.235.51 … docker exec` host is decommissioned).
+> postcall handles both — this is just context.
+
 Pre-fill: prefer the no-flag form (the postcall skill reads from the
 customer table the on-call skill just wrote) — but show both shapes so
 the operator can override if a value differs. If state captured from
@@ -214,6 +222,12 @@ Sub-skill: `/onboard-customer-briefing <slug>` (default = 60-day trial).
 
 Add `--paid` only if the customer has purchased the briefing outright.
 
+**Always run the first briefing NOW, as part of onboarding** (never defer
+it to the Monday DAG), and **always generate it locally in Claude** (the
+local-claude two-pass path) so there is zero Anthropic API spend. Mike,
+2026-06-10 — the customer's dashboard must show a real briefing the day
+they go live.
+
 If state from phase 3 captured `database_id`, mention it — the briefing
 sub-skill will prompt for it inside its own step 3, and the operator can
 paste it from memory instead of looking it up.
@@ -257,7 +271,12 @@ After phase 10 returns, print a clean wrap-up:
 Customer <slug> is live.
 
 Next manual actions for the operator:
-  - Send the welcome email to the customer.
+  - Send the welcome email to the customer. It MUST include the TRAINING
+    booking link (Mike's training-appointments calendar — NOT the demo
+    link): https://calendar.google.com/calendar/appointments/schedules/AcZssZ0LLF1EDR7vruRc01qe57yzUecIFn2Aj8WCeyP_wq2Pb7NqZhQVJ_DmpnzvNyhSD7Z8hO8hhgOc
+    (so they start training right away) and say Mike wants to be on their
+    first login to walk them around — never "we'll reach out shortly to
+    schedule." (Mike, 2026-06-10.)
   - Confirm tomorrow's customers.xcel.report includes <slug> (the DAG
     runs daily at 13:30 UTC; if you want it sooner, the register skill
     already triggered a one-off run).

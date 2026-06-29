@@ -243,6 +243,13 @@ Customer <slug> is LIVE. Metabase URL: https://<slug>.xcel.report.
 Send the customer their welcome email — template "Welcome Email — Full
 Reporting Package" in
 /Users/mike/dev/projects/odoo_bank_metabase_payroll_reporting/XcelConnectAndUpdater/CLAUDE.md.
+The welcome email MUST (Mike, 2026-06-10) include the TRAINING booking
+link (Mike's training-appointments calendar — distinct from the demo
+link): https://calendar.google.com/calendar/appointments/schedules/AcZssZ0LLF1EDR7vruRc01qe57yzUecIFn2Aj8WCeyP_wq2Pb7NqZhQVJ_DmpnzvNyhSD7Z8hO8hhgOc
+so they can start training right away, AND tell them Mike wants to be on
+their first login to walk them around — never "we'll reach out shortly to
+schedule." (Both template variants
+already encode this.)
 ```
 
 Stop.

@@ -194,10 +194,16 @@ The DAG runs daily at 13:30 UTC anyway, so a one-off trigger is optional
 — but Mike usually wants to see the new customer the same day, not wait
 until tomorrow.
 
+> **2026-06-26 — triggering is now via the Airflow REST API** at
+> `https://airflow.xcel.software` (the old `ssh mike@100.67.235.51 … docker
+> exec` host is decommissioned). Auth = JWT from `/auth/token`. Creds come
+> from the `airflow_api` 1Password entry or env vars `AIRFLOW_API_USER` /
+> `AIRFLOW_API_PASSWORD`.
+
 Confirm:
 
-> Trigger Airflow `customer_report_dag` now via SSH to
-> `mike@100.67.235.51` so `<slug>` shows up on customers.xcel.report
+> Trigger Airflow `customer_report_dag` now via the REST API at
+> `https://airflow.xcel.software` so `<slug>` shows up on customers.xcel.report
 > within ~5 minutes?
 >
 > If you say `no`, the next scheduled run at 13:30 UTC will pick it up
@@ -205,23 +211,27 @@ Confirm:
 >
 > Type `yes` to trigger now, or `skip` to wait for the scheduled run.
 
-On `yes`, prompt for the sudo password (do NOT hardcode), then:
+On `yes`:
 
 ```bash
-ssh mike@100.67.235.51 "echo '<password>' | sudo -S docker exec \
-  airflow-airflow-scheduler-1 airflow dags trigger customer_report_dag"
+AIRFLOW_URL="https://airflow.xcel.software"
+TOKEN=$(curl -s -X POST "$AIRFLOW_URL/auth/token" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$AIRFLOW_API_USER\",\"password\":\"$AIRFLOW_API_PASSWORD\"}" \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+curl -s -X POST "$AIRFLOW_URL/api/v2/dags/customer_report_dag/dagRuns" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"logical_date": null}'
 ```
 
-If SSH fails (no key, broker unreachable), fall back to printing the
-EXACT manual command for the operator to run themselves:
+If the creds aren't available, fall back to the UI: open
+`https://airflow.xcel.software/dags/customer_report_dag` and click ▶ **Trigger**.
 
-```
-ssh mike@100.67.235.51
-sudo docker exec airflow-airflow-scheduler-1 airflow dags trigger customer_report_dag
-```
-
-Wait ~30s, then print the Airflow UI link (`http://100.67.235.51:8080/dags/customer_report_dag/runs`)
-so the operator can watch it.
+Wait ~30s, then print the Airflow UI link
+(`https://airflow.xcel.software/dags/customer_report_dag`) so the operator can
+watch it.
 
 ## Step 6 — confirm the row appears (read-only, optional)
 

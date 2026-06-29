@@ -15,9 +15,8 @@ ON; pass `--off` to disable.
 
 The Mon–Fri + last-day-of-month gate is enforced centrally by the
 `should_run()` helper in
-`etl_pipeline/airflow/dags/utils/data_classes.py` (Deliverable 4 of the
-onboarding plan) — you do NOT change schedules here, only the per-customer
-opt-in flag.
+`airflow_dags/dags/utils/data_classes.py` — you do NOT change schedules
+here, only the per-customer opt-in flag.
 
 **Execution mode:** local edit + read-only checks unprompted. The Git push at
 the end is RISKY and requires `yes`.
@@ -37,10 +36,14 @@ Print a one-line plan: `Setting snapshots=<True|False> for <slug>.`
 Search both files for an existing `DBTConfig(customer="<slug>"...)` or
 `RollupConfig(customer="<slug>"...)` line:
 
+> **2026-06-26 — registries moved to the `airflow_dags` repo** (sibling
+> clone at `/Users/mike/dev/projects/airflow_dags`), out of the old
+> `etl_pipeline/airflow/...` tree.
+
 ```bash
 grep -nE 'customer="<slug>"' \
-  /Users/mike/dev/projects/etl_pipeline/airflow/dags/utils/single_customers.py \
-  /Users/mike/dev/projects/etl_pipeline/airflow/dags/utils/rollup_customers.py
+  /Users/mike/dev/projects/airflow_dags/dags/utils/single_customers.py \
+  /Users/mike/dev/projects/airflow_dags/dags/utils/rollup_customers.py
 ```
 
 - If found in `single_customers.py` → edit that file.
@@ -61,16 +64,16 @@ Show the diff back to the user.
 
 Confirm:
 
-> Commit the snapshots flip on `etl_pipeline` with message
+> Commit the snapshots flip on `airflow_dags` with message
 > `chore(snapshots): set <slug> snapshots=<True|False>`? Push to origin?
 > Type `yes`.
 
 On `yes`:
 
 ```bash
-git -C /Users/mike/dev/projects/etl_pipeline add airflow/dags/utils/single_customers.py airflow/dags/utils/rollup_customers.py
-git -C /Users/mike/dev/projects/etl_pipeline commit -m "chore(snapshots): set <slug> snapshots=<True|False>"
-git -C /Users/mike/dev/projects/etl_pipeline push
+git -C /Users/mike/dev/projects/airflow_dags add dags/utils/single_customers.py dags/utils/rollup_customers.py
+git -C /Users/mike/dev/projects/airflow_dags commit -m "chore(snapshots): set <slug> snapshots=<True|False>"
+git -C /Users/mike/dev/projects/airflow_dags push
 ```
 
 (`git add` both files even if only one changed — the other is a no-op.)
